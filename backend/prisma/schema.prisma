@@ -1,0 +1,226 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  EMPLOYEE
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  DELAYED
+  ON_HOLD
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum MessageType {
+  NORMAL
+  MANDATORY_RESPONSE
+}
+
+enum MessageResponseStatus {
+  ACCEPT
+  REJECT
+  COMMENT
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                        Int                         @id @default(autoincrement())
+  email                     String                      @unique
+  password                  String
+  name                      String
+  role                      Role                        @default(EMPLOYEE)
+  deletedAt                 DateTime?
+  createdAt                 DateTime                    @default(now())
+  updatedAt                 DateTime                    @updatedAt
+  tasks                     Task[]                      @relation("EmployeeTasks")
+  messagesSent              Message[]                   @relation("SenderMessages")
+  messageResponses          MessageResponse[]           @relation("EmployeeResponses")
+  leaves                    Leave[]                     @relation("EmployeeLeaves")
+  leavesApproved            Leave[]                     @relation("ApprovedLeaves")
+  announcementsCreated      Announcement[]              @relation("CreatorAnnouncements")
+  announcementAcks          AnnouncementAck[]           @relation("UserAcks")
+  notifications             Notification[]              @relation("UserNotifications")
+  uploadedAttachments       Attachment[]                @relation("UploadedBy")
+  activityLogs              ActivityLog[]               @relation("UserLogs")
+}
+
+model Project {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  isArchived  Boolean   @default(false)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tasks       Task[]    @relation("ProjectTasks")
+}
+
+model Task {
+  id                      Int            @id @default(autoincrement())
+  date                    DateTime       @default(now())
+  employeeId              Int
+  employee                User           @relation("EmployeeTasks", fields: [employeeId], references: [id])
+  startTime               String
+  expectedCompletionDate  DateTime
+  projectId               Int
+  project                 Project        @relation("ProjectTasks", fields: [projectId], references: [id])
+  description             String
+  changesGivenBy          String?
+  changesSummary          String?
+  priority                TaskPriority   @default(MEDIUM)
+  status                  TaskStatus     @default(PENDING)
+  delayReason             String?
+  notes                   String?
+  carryForwardedFromId    Int?           @unique
+  carryForwardedFrom      Task?          @relation("CarryForwardRelation", fields: [carryForwardedFromId], references: [id])
+  carryForwardedTo        Task?          @relation("CarryForwardRelation")
+  deletedAt               DateTime?
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  updates                 TaskUpdate[]   @relation("TaskUpdates")
+  attachments             Attachment[]   @relation("TaskAttachments")
+}
+
+model TaskUpdate {
+  id           Int        @id @default(autoincrement())
+  taskId       Int
+  task         Task       @relation("TaskUpdates", fields: [taskId], references: [id])
+  statusBefore TaskStatus
+  statusAfter  TaskStatus
+  remarks      String?
+  screenshotUrl String?
+  deletedAt    DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Announcement {
+  id          Int               @id @default(autoincrement())
+  title       String
+  content     String
+  creatorId   Int
+  creator     User              @relation("CreatorAnnouncements", fields: [creatorId], references: [id])
+  deletedAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  acks        AnnouncementAck[] @relation("AnnouncementAcks")
+}
+
+model AnnouncementAck {
+  id             Int          @id @default(autoincrement())
+  announcementId Int
+  announcement   Announcement @relation("AnnouncementAcks", fields: [announcementId], references: [id])
+  userId         Int
+  user           User         @relation("UserAcks", fields: [userId], references: [id])
+  acknowledgedAt DateTime     @default(now())
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Notification {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  user      User      @relation("UserNotifications", fields: [userId], references: [id])
+  type      String    // TASK_ASSIGNED, TASK_UPDATED, ANNOUNCEMENT, MESSAGE, LEAVE_STATUS
+  title     String
+  message   String
+  isRead    Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id           Int               @id @default(autoincrement())
+  senderId     Int
+  sender       User              @relation("SenderMessages", fields: [senderId], references: [id])
+  content      String
+  type         MessageType       @default(NORMAL)
+  recipientIds Int[]
+  isEveryone   Boolean           @default(false)
+  deletedAt    DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  responses    MessageResponse[] @relation("MessageResponses")
+}
+
+model MessageResponse {
+  id          Int                   @id @default(autoincrement())
+  messageId   Int
+  message     Message               @relation("MessageResponses", fields: [messageId], references: [id])
+  employeeId  Int
+  employee    User                  @relation("EmployeeResponses", fields: [employeeId], references: [id])
+  response    MessageResponseStatus
+  comment     String?
+  respondedAt DateTime              @default(now())
+  deletedAt   DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+}
+
+model Leave {
+  id           Int         @id @default(autoincrement())
+  employeeId   Int
+  employee     User        @relation("EmployeeLeaves", fields: [employeeId], references: [id])
+  startDate    DateTime
+  endDate      DateTime
+  reason       String
+  status       LeaveStatus @default(PENDING)
+  approvedById Int?
+  approvedBy   User?       @relation("ApprovedLeaves", fields: [approvedById], references: [id])
+  remarks      String?
+  deletedAt    DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  attachments  Attachment[] @relation("LeaveAttachments")
+}
+
+model Attachment {
+  id           Int       @id @default(autoincrement())
+  filename     String
+  filepath     String
+  mimetype     String
+  size         Int
+  taskId       Int?
+  task         Task?     @relation("TaskAttachments", fields: [taskId], references: [id])
+  leaveId      Int?
+  leave        Leave?    @relation("LeaveAttachments", fields: [leaveId], references: [id])
+  uploadedById Int
+  uploadedBy   User      @relation("UploadedBy", fields: [uploadedById], references: [id])
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model ActivityLog {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  user      User      @relation("UserLogs", fields: [userId], references: [id])
+  action    String
+  details   String?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}

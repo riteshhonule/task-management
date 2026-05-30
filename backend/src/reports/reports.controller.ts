@@ -1,0 +1,75 @@
+import { Controller, Get, Query, Res, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { ReportsService } from './reports.service';
+import { Response } from 'express';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
+import { Role, User } from '@prisma/client';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+
+@ApiTags('reports')
+@Controller('reports')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@ApiBearerAuth()
+export class ReportsController {
+  constructor(private readonly reportsService: ReportsService) {}
+
+  @Get('daily-review')
+  @ApiOperation({ summary: 'Get daily tasks review list' })
+  @ApiQuery({ name: 'date', required: false, description: 'YYYY-MM-DD' })
+  getDailyReview(@Query('date') date?: string) {
+    return this.reportsService.getDailyReviewData(date);
+  }
+
+  @Get('export-excel')
+  @ApiOperation({ summary: 'Export daily tasks review to Excel' })
+  @ApiQuery({ name: 'date', required: false, description: 'YYYY-MM-DD' })
+  async exportExcel(@Res() res: Response, @Query('date') date?: string) {
+    const buffer = await this.reportsService.exportExcel(date);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=daily-review-${date || 'today'}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('export-pdf')
+  @ApiOperation({ summary: 'Export daily tasks review to PDF' })
+  @ApiQuery({ name: 'date', required: false, description: 'YYYY-MM-DD' })
+  async exportPdf(@Res() res: Response, @Query('date') date?: string) {
+    const buffer = await this.reportsService.exportPdf(date);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=daily-review-${date || 'today'}.pdf`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('performance')
+  @ApiOperation({ summary: 'Get employee performance rates (Employees see own, Admins see all)' })
+  @ApiQuery({ name: 'employeeId', required: false, type: Number })
+  @ApiQuery({ name: 'startDate', required: false, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'YYYY-MM-DD' })
+  getPerformance(
+    @CurrentUser() user: User,
+    @Query('employeeId') employeeId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
+    if (user.role === Role.EMPLOYEE) {
+      targetEmployeeId = user.id;
+    }
+    return this.reportsService.getPerformanceReport(targetEmployeeId, startDate, endDate);
+  }
+
+  @Get('analytics')
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Get aggregated analytics for dashboard charts (Admin/SuperAdmin only)' })
+  getAnalytics() {
+    return this.reportsService.getDashboardAnalytics();
+  }
+}
