@@ -186,58 +186,66 @@ export const Leaves: React.FC = () => {
           ) : leaves.length === 0 ? (
             <p className="text-xs text-slate-500 text-center py-10">No leave applications registered.</p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {leaves.map((l) => (
-                <div
-                  key={l.id}
-                  className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between gap-4"
-                >
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-start flex-wrap gap-2">
-                      <div className="text-xs font-bold text-slate-800">
-                        {isAdmin ? l.user?.name : `${l.type} LEAVE`}
-                      </div>
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${getStatusColor(l.status)}`}>
-                        {l.status}
-                      </span>
-                    </div>
-
-                    {isAdmin && (
-                      <div className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">
-                        {l.type} LEAVE
-                      </div>
-                    )}
-
-                    <div className="text-xs text-slate-500">
-                      <span className="font-semibold text-slate-600">Duration:</span>{' '}
-                      {new Date(l.startDate).toLocaleDateString()} to {new Date(l.endDate).toLocaleDateString()}
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-150 text-xs text-slate-600 leading-relaxed">
-                      {l.reason}
-                    </div>
-                  </div>
-
-                  {isAdmin && l.status === 'PENDING' && (
-                    <div className="flex items-center gap-2 border-t border-slate-100 pt-3">
-                      <button
-                        onClick={() => handleProcessStatus(l.id, 'APPROVED')}
-                        disabled={processingId === l.id}
-                        className="flex-1 rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white py-1.5 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <Check size={13} /> Approve
-                      </button>
-                      <button
-                        onClick={() => handleProcessStatus(l.id, 'REJECTED')}
-                        disabled={processingId === l.id}
-                        className="flex-1 rounded-lg bg-rose-50 border border-rose-100 text-rose-700 hover:bg-rose-600 hover:text-white py-1.5 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <X size={13} /> Reject
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="max-h-[75vh] overflow-auto">
+                <table className="w-full text-left border-collapse min-w-max">
+                  <thead className="sticky top-0 z-20 bg-slate-200 outline outline-1 outline-slate-400 shadow-sm">
+                    <tr className="bg-slate-200 divide-x divide-slate-400">
+                      {isAdmin && <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Employee Name</th>}
+                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Duration</th>
+                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider w-[350px]">Reason</th>
+                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Status</th>
+                      {isAdmin && <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider text-right">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-400">
+                    {leaves.map((l) => (
+                      <tr key={l.id} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
+                        {isAdmin && (
+                          <td className="px-5 py-5 text-sm font-bold text-slate-800 whitespace-nowrap">
+                            {l.employee?.name || 'Unknown Employee'}
+                          </td>
+                        )}
+                        <td className="px-5 py-5 text-xs text-slate-600 whitespace-nowrap">
+                          {new Date(l.startDate).toLocaleDateString()} <span className="text-slate-400 mx-1">to</span> {new Date(l.endDate).toLocaleDateString()}
+                        </td>
+                        <td className="px-5 py-5 text-xs text-slate-700 whitespace-normal leading-relaxed">
+                          {l.reason}
+                        </td>
+                        <td className="px-5 py-5 text-xs whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-md font-bold border inline-block ${getStatusColor(l.status)}`}>
+                            {l.status}
+                          </span>
+                        </td>
+                        {isAdmin && (
+                          <td className="px-5 py-5 text-xs text-right whitespace-nowrap">
+                            {l.status === 'PENDING' ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleProcessStatus(l.id, 'APPROVED')}
+                                  disabled={processingId === l.id}
+                                  className="rounded-lg bg-emerald-50 border border-emerald-100 text-emerald-700 hover:bg-emerald-600 hover:text-white px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                                >
+                                  {processingId === l.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Approve
+                                </button>
+                                <button
+                                  onClick={() => handleProcessStatus(l.id, 'REJECTED')}
+                                  disabled={processingId === l.id}
+                                  className="rounded-lg bg-rose-50 border border-rose-100 text-rose-700 hover:bg-rose-600 hover:text-white px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                                >
+                                  {processingId === l.id ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />} Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-xs italic">Reviewed</span>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

@@ -53,6 +53,21 @@ export class UpdateTaskDto {
   @IsOptional()
   delayReason?: string;
 
+  @ApiProperty({ example: 'Waiting on third party API access', required: false })
+  @IsString()
+  @IsOptional()
+  blockedReason?: string;
+
+  @ApiProperty({ example: 'Completed testing and integrated APIs', required: false })
+  @IsString()
+  @IsOptional()
+  completedWorkDescription?: string;
+
+  @ApiProperty({ example: 85, required: false })
+  @IsNumber()
+  @IsOptional()
+  completionPercentage?: number;
+
   @ApiProperty({ example: 'Testing on mobile', required: false })
   @IsString()
   @IsOptional()

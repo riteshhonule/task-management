@@ -8,7 +8,7 @@ import { HelpCircle, AlertTriangle, MessageSquare } from 'lucide-react';
 
 export const Layout: React.FC = () => {
   const { token, user, loading } = useAuth();
-  
+
   // Carry Forward State
   const [pendingCarryForwards, setPendingCarryForwards] = useState<any[]>([]);
   const [currentCarryForward, setCurrentCarryForward] = useState<any | null>(null);
@@ -81,7 +81,7 @@ export const Layout: React.FC = () => {
 
       // Clear fields
       setMandatoryComment('');
-      
+
       // Look for next pending blocker
       const nextMessages = pendingMandatoryMessages.filter((m) => m.id !== currentMandatoryMessage.id);
       setPendingMandatoryMessages(nextMessages);
@@ -125,14 +125,14 @@ export const Layout: React.FC = () => {
       {/* CARRY FORWARD POPUP PROMPT */}
       {currentCarryForward && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-slate-400 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3 text-amber-500">
               <div className="rounded-lg bg-amber-500/10 p-2 border border-amber-500/20">
                 <HelpCircle size={24} />
               </div>
               <h3 className="font-heading text-lg font-semibold text-slate-850">Carry Forward Task?</h3>
             </div>
-            
+
             <p className="mt-3 text-sm text-slate-500 leading-relaxed">
               You left the following task incomplete on{' '}
               <span className="font-semibold text-slate-700">
@@ -199,15 +199,14 @@ export const Layout: React.FC = () => {
                     <button
                       key={opt}
                       onClick={() => setMandatoryResponse(opt)}
-                      className={`py-2 rounded-xl text-xs font-bold tracking-wide border transition-all cursor-pointer ${
-                        mandatoryResponse === opt
+                      className={`py-2 rounded-xl text-xs font-bold tracking-wide border transition-all cursor-pointer ${mandatoryResponse === opt
                           ? opt === 'ACCEPT'
                             ? 'bg-emerald-600/15 border-emerald-500/30 text-emerald-600'
                             : opt === 'REJECT'
-                            ? 'bg-rose-600/15 border-rose-500/30 text-rose-600'
-                            : 'bg-indigo-600/15 border-indigo-500/30 text-indigo-600'
+                              ? 'bg-rose-600/15 border-rose-500/30 text-rose-600'
+                              : 'bg-indigo-600/15 border-indigo-500/30 text-indigo-600'
                           : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-                      }`}
+                        }`}
                     >
                       {opt}
                     </button>

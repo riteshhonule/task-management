@@ -73,7 +73,91 @@ async function main() {
     },
   });
   console.log(`Employee seeded successfully: ${employeeUser.email}`);
+
+  // Seed second Employee (Adwaita)
+  const adwaitaHash = await bcrypt.hash('Adwaita@12345', salt);
+  const adwaitaUser = await prisma.user.upsert({
+    where: { email: 'adwaita@company.com' },
+    update: {},
+    create: {
+      email: 'adwaita@company.com',
+      name: 'Adwaita',
+      password: adwaitaHash,
+      role: Role.EMPLOYEE,
+    },
+  });
+  console.log(`Employee seeded successfully: ${adwaitaUser.email}`);
+
+  // Fetch all projects for random assignment
+  const dbProjects = await prisma.project.findMany();
   
+  // Seed Tasks for the last 5 days
+  console.log('Seeding dummy tasks for the last 5 days...');
+  const employees = [employeeUser, adwaitaUser];
+  
+  for (let i = 0; i < 5; i++) {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() - i);
+    targetDate.setHours(0, 0, 0, 0); // normalize date
+
+    for (const emp of employees) {
+      // Check if task already exists for this date and employee to avoid unique constraints if any
+      const existingTask = await prisma.task.findFirst({
+        where: {
+          employeeId: emp.id,
+          date: targetDate,
+        }
+      });
+
+      if (!existingTask) {
+        const proj = dbProjects[Math.floor(Math.random() * dbProjects.length)];
+        
+        // Vary statuses based on how old the task is
+        let status = 'COMPLETED';
+        let completionPercentage = 100;
+        let completedWorkDescription = 'Finished all assigned modules successfully.';
+        let delayReason = null;
+        let blockedReason = null;
+
+        if (i === 0) {
+          status = 'IN_PROGRESS';
+          completionPercentage = 45;
+          completedWorkDescription = null;
+        } else if (i === 1 && emp.name === 'Adwaita') {
+          status = 'DELAYED';
+          completionPercentage = 80;
+          delayReason = 'Waiting on client approval for UI designs.';
+          completedWorkDescription = 'Completed API integration, waiting for UI.';
+        } else if (i === 2 && emp.name === 'John Doe') {
+          status = 'BLOCKED';
+          completionPercentage = 20;
+          blockedReason = 'Server access revoked, raised IT ticket.';
+          completedWorkDescription = null;
+        }
+
+        const expectedEnd = new Date(targetDate);
+        expectedEnd.setHours(18, 0, 0, 0); // 6 PM
+
+        await prisma.task.create({
+          data: {
+            employeeId: emp.id,
+            projectId: proj.id,
+            description: `Work on ${proj.name} phase ${i + 1} deliverables.`,
+            date: targetDate,
+            startTime: '10:00 AM',
+            expectedCompletionDate: expectedEnd,
+            status: status as any,
+            completionPercentage,
+            completedWorkDescription,
+            delayReason,
+            blockedReason,
+          }
+        });
+      }
+    }
+  }
+  console.log('Dummy tasks seeded successfully.');
+
   console.log('Database seeding finished.');
 }
 

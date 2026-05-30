@@ -19,6 +19,7 @@ enum TaskStatus {
   COMPLETED
   DELAYED
   ON_HOLD
+  BLOCKED
 }
 
 enum TaskPriority {
@@ -91,7 +92,10 @@ model Task {
   priority                TaskPriority   @default(MEDIUM)
   status                  TaskStatus     @default(PENDING)
   delayReason             String?
+  blockedReason           String?
   notes                   String?
+  completedWorkDescription String?
+  completionPercentage    Int?           @default(0)
   carryForwardedFromId    Int?           @unique
   carryForwardedFrom      Task?          @relation("CarryForwardRelation", fields: [carryForwardedFromId], references: [id])
   carryForwardedTo        Task?          @relation("CarryForwardRelation")

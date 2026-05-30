@@ -19,6 +19,24 @@ export class TasksService {
       targetEmployeeId = dto.employeeId;
     }
 
+    const taskDate = dto.date ? new Date(dto.date) : new Date();
+    const startOfDay = new Date(taskDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(taskDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const existingTask = await this.prisma.task.findFirst({
+      where: {
+        employeeId: targetEmployeeId,
+        date: { gte: startOfDay, lte: endOfDay },
+        deletedAt: null,
+      },
+    });
+
+    if (existingTask) {
+      throw new BadRequestException('A task has already been created for today.');
+    }
+
     // Verify project is active
     const project = await this.prisma.project.findFirst({
       where: { id: dto.projectId, deletedAt: null },
@@ -32,7 +50,7 @@ export class TasksService {
 
     const task = await this.prisma.task.create({
       data: {
-        date: dto.date ? new Date(dto.date) : new Date(),
+        date: taskDate,
         employeeId: targetEmployeeId,
         startTime: dto.startTime,
         expectedCompletionDate: new Date(dto.expectedCompletionDate),
@@ -183,6 +201,9 @@ export class TasksService {
     if (dto.priority) updateData.priority = dto.priority;
     if (dto.status) updateData.status = dto.status;
     if (dto.delayReason !== undefined) updateData.delayReason = dto.delayReason;
+    if (dto.blockedReason !== undefined) updateData.blockedReason = dto.blockedReason;
+    if (dto.completedWorkDescription !== undefined) updateData.completedWorkDescription = dto.completedWorkDescription;
+    if (dto.completionPercentage !== undefined) updateData.completionPercentage = dto.completionPercentage;
     if (dto.notes !== undefined) updateData.notes = dto.notes;
     if (currentUserRole !== Role.EMPLOYEE && dto.employeeId) {
       updateData.employeeId = dto.employeeId;
