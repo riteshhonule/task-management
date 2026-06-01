@@ -22,7 +22,28 @@ export const Reports: React.FC = () => {
         tasksApi.list(),
         projectsApi.list(),
       ]);
-      setTasks(tasksRes.data);
+      
+      // Flatten multi-project tasks
+      const flatTasks: any[] = [];
+      if (tasksRes.data && Array.isArray(tasksRes.data)) {
+        tasksRes.data.forEach((parentTask: any) => {
+          if (parentTask.projects && parentTask.projects.length > 0) {
+            parentTask.projects.forEach((tp: any) => {
+              flatTasks.push({
+                ...tp,
+                startDate: parentTask.startDate,
+                startTime: parentTask.startTime,
+                expectedEndDate: parentTask.expectedEndDate,
+                employee: parentTask.employee,
+                parentTaskId: parentTask.id,
+                screenshotUrl: tp.updates && tp.updates.length > 0 ? tp.updates[0].screenshotUrl : null,
+              });
+            });
+          }
+        });
+      }
+
+      setTasks(flatTasks);
       setProjects(projectsRes.data.filter((p: any) => !p.isArchived));
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
@@ -36,11 +57,11 @@ export const Reports: React.FC = () => {
   }, []);
 
   const handleExportExcel = () => {
-    window.open(tasksApi.getMetrics ? 'http://localhost:3000/reports/export-excel' : '', '_blank');
+    window.open('http://localhost:3000/reports/export-excel', '_blank');
   };
 
   const handleExportPdf = () => {
-    window.open(tasksApi.getMetrics ? 'http://localhost:3000/reports/export-pdf' : '', '_blank');
+    window.open('http://localhost:3000/reports/export-pdf', '_blank');
   };
 
   const today = new Date().toDateString();
@@ -50,9 +71,9 @@ export const Reports: React.FC = () => {
     let filtered = tasks;
     
     if (activeTab === 'TODAY') {
-      filtered = filtered.filter(t => new Date(t.date).toDateString() === today);
+      filtered = filtered.filter(t => new Date(t.startDate).toDateString() === today);
     } else if (activeTab === 'YESTERDAY') {
-      filtered = filtered.filter(t => new Date(t.date).toDateString() === yesterday);
+      filtered = filtered.filter(t => new Date(t.startDate).toDateString() === yesterday);
     } else if (activeTab === 'COMPLETED') {
       filtered = filtered.filter(t => t.status === 'COMPLETED');
     } else if (activeTab === 'IN_PROGRESS') {
@@ -65,9 +86,9 @@ export const Reports: React.FC = () => {
     
     if (searchQuery) {
       filtered = filtered.filter(t => 
-        t.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        t.project?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.employee?.name.toLowerCase().includes(searchQuery.toLowerCase())
+        (t.taskDescription || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+        (t.project?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (t.employee?.name || '').toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
     if (filterProject) {
@@ -75,7 +96,7 @@ export const Reports: React.FC = () => {
     }
     if (filterDate) {
       filtered = filtered.filter(t => {
-        const d = new Date(t.date);
+        const d = new Date(t.startDate);
         const yyyy = d.getFullYear();
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const dd = String(d.getDate()).padStart(2, '0');
@@ -86,16 +107,16 @@ export const Reports: React.FC = () => {
   }, [tasks, activeTab, searchQuery, filterProject, filterDate, today, yesterday]);
 
   const groupedTasks = useMemo(() => {
-    const sorted = [...filteredTasks].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const sorted = [...filteredTasks].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
     const groups: { dateStr: string, displayDate: string, tasks: any[] }[] = [];
     
     sorted.forEach(t => {
-      const dStr = new Date(t.date).toDateString();
+      const dStr = new Date(t.startDate).toDateString();
       let group = groups.find(g => g.dateStr === dStr);
       if (!group) {
         group = { 
           dateStr: dStr, 
-          displayDate: new Date(t.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }), 
+          displayDate: new Date(t.startDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }), 
           tasks: [] 
         };
         groups.push(group);
@@ -239,10 +260,10 @@ export const Reports: React.FC = () => {
                         </tr>
                         {group.tasks.map((t: any) => (
                           <tr key={t.id} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
-                            <td className="px-5 py-5 text-xs text-slate-500 font-medium whitespace-nowrap">{new Date(t.date).toLocaleDateString()}</td>
+                            <td className="px-5 py-5 text-xs text-slate-500 font-medium whitespace-nowrap">{new Date(t.startDate).toLocaleDateString()}</td>
                             <td className="px-5 py-5 text-xs font-bold text-slate-800 whitespace-nowrap">{t.employee?.name || 'N/A'}</td>
                             <td className="px-5 py-5 text-xs text-indigo-700 font-bold whitespace-nowrap">{t.project?.name || 'N/A'}</td>
-                            <td className="px-5 py-5 text-xs text-slate-700 whitespace-normal leading-relaxed">{t.description}</td>
+                            <td className="px-5 py-5 text-xs text-slate-700 whitespace-normal leading-relaxed">{t.taskDescription}</td>
                             <td className="px-5 py-5 text-xs font-bold text-slate-700 whitespace-nowrap">{t.completionPercentage || 0}%</td>
                             <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">
                               {t.screenshotUrl ? (
@@ -253,7 +274,7 @@ export const Reports: React.FC = () => {
                             </td>
                             <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">{t.startTime}</td>
                             <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">
-                              {new Date(t.expectedCompletionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(t.expectedEndDate).toLocaleDateString()}
                             </td>
                             <td className="px-5 py-5 text-xs font-bold text-slate-700 whitespace-nowrap">
                               {t.status === 'DELAYED' ? <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100">Yes</span> : <span className="text-slate-400">No</span>}
@@ -272,7 +293,7 @@ export const Reports: React.FC = () => {
                             </td>
                             <td className="px-5 py-5 text-xs text-right whitespace-nowrap">
                               <span className={`px-3 py-1.5 rounded-lg font-bold border inline-block ${getStatusColor(t.status)}`}>
-                                {t.status.replace('_', ' ')}
+                                {(t.status || '').replace('_', ' ')}
                               </span>
                             </td>
                           </tr>

@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
 import { tasksApi, messagesApi } from '../services/api';
 import { HelpCircle, AlertTriangle, MessageSquare } from 'lucide-react';
+import { GlobalNotificationPopup } from './GlobalNotificationPopup';
 
 export const Layout: React.FC = () => {
   const { token, user, loading } = useAuth();
@@ -114,6 +115,7 @@ export const Layout: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-slate-50">
+      <GlobalNotificationPopup />
       <Sidebar />
       <div className="flex-1 flex flex-col min-h-screen overflow-y-auto">
         <Navbar />

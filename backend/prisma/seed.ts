@@ -105,7 +105,7 @@ async function main() {
       const existingTask = await prisma.task.findFirst({
         where: {
           employeeId: emp.id,
-          date: targetDate,
+          startDate: targetDate,
         }
       });
 
@@ -141,16 +141,22 @@ async function main() {
         await prisma.task.create({
           data: {
             employeeId: emp.id,
-            projectId: proj.id,
-            description: `Work on ${proj.name} phase ${i + 1} deliverables.`,
-            date: targetDate,
+            startDate: targetDate,
             startTime: '10:00 AM',
-            expectedCompletionDate: expectedEnd,
-            status: status as any,
-            completionPercentage,
-            completedWorkDescription,
-            delayReason,
-            blockedReason,
+            expectedEndDate: expectedEnd,
+            projects: {
+              create: [
+                {
+                  projectId: proj.id,
+                  taskDescription: `Work on ${proj.name} phase ${i + 1} deliverables.`,
+                  status: status as any,
+                  completionPercentage,
+                  completedWorkDescription,
+                  delayReason,
+                  blockedReason,
+                }
+              ]
+            }
           }
         });
       }

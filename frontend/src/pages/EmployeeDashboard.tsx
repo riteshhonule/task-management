@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { tasksApi, projectsApi, uploadsApi } from '../services/api';
 import {
-  Plus, Clock, AlertTriangle, Upload, Search, Calendar,
-  Edit, ArrowRight, Loader2, Save, X, User
+  Plus, AlertTriangle, Search, Calendar,
+  Edit, Loader2, Save, X, CheckSquare
 } from 'lucide-react';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 type TabType = 'TODAY' | 'YESTERDAY' | 'ALL' | 'COMPLETED' | 'IN_PROGRESS' | 'DELAYED' | 'PENDING';
 
@@ -19,28 +20,37 @@ export const EmployeeDashboard: React.FC = () => {
 
   // Modals state
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showDuplicatePopup, setShowDuplicatePopup] = useState(false);
   const [showEveningReview, setShowEveningReview] = useState(false);
   
   // Forms state
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Create Task Form
-  const [startTime, setStartTime] = useState('09:00 AM');
-  const [expectedEnd, setExpectedEnd] = useState('');
-  const [projectId, setProjectId] = useState('');
-  const [description, setDescription] = useState('');
-  const [changesGivenBy, setChangesGivenBy] = useState('');
-  const [changesSummary, setChangesSummary] = useState('');
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [startTime, setStartTime] = useState(() => new Date().toTimeString().slice(0, 5));
+  const [expectedEndDateType, setExpectedEndDateType] = useState<'today'|'tomorrow'|'custom'>('today');
+  const [expectedEndDate, setExpectedEndDate] = useState('');
+  
+  // Multi-Project selection and details
+  const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
+  const [projectDetails, setProjectDetails] = useState<Record<number, { taskDescription: string, changesGivenBy: string, changesSummary: string }>>({});
+  
+  const [showDuplicatePopup, setShowDuplicatePopup] = useState(false);
   
   // Edit / Review Task Form
   const [editTask, setEditTask] = useState<any | null>(null);
-  const [reviewStatus, setReviewStatus] = useState('');
-  const [completedWork, setCompletedWork] = useState('');
-  const [delayReason, setDelayReason] = useState('');
-  const [blockedReason, setBlockedReason] = useState('');
-  const [completionPercentage, setCompletionPercentage] = useState<number>(0);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editExpectedEndDate, setEditExpectedEndDate] = useState('');
+  const [reviewProjects, setReviewProjects] = useState<Record<number, { 
+    id?: number,
+    status: string, 
+    completedWorkDescription: string, 
+    delayReason: string, 
+    blockedReason: string, 
+    completionPercentage: number,
+    screenshotUrl?: string,
+    uploadFile?: File | null
+  }>>({});
 
   const fetchDashboardData = async () => {
     try {
@@ -65,23 +75,19 @@ export const EmployeeDashboard: React.FC = () => {
   const today = new Date().toDateString();
   const yesterday = new Date(Date.now() - 86400000).toDateString();
 
-  const todayTask = useMemo(() => tasks.find(t => new Date(t.date).toDateString() === today), [tasks, today]);
-  const yesterdayTask = useMemo(() => tasks.find(t => new Date(t.date).toDateString() === yesterday), [tasks, yesterday]);
+  const todayTasks = useMemo(() => tasks.filter(t => new Date(t.startDate).toDateString() === today), [tasks, today]);
+  const todayTask = todayTasks.length > 0 ? todayTasks[0] : null;
+  const yesterdayTask = useMemo(() => tasks.find(t => new Date(t.startDate).toDateString() === yesterday), [tasks, yesterday]);
 
   // Check Evening Review
   useEffect(() => {
     const currentHour = new Date().getHours();
-    // Evening workflow triggers at 6 PM (18:00) or later
     if (currentHour >= 18 && todayTask) {
-      const isReviewSubmitted = todayTask.status !== 'PENDING' && (todayTask.completedWorkDescription || todayTask.status === 'DELAYED' || todayTask.status === 'BLOCKED');
-      if (!isReviewSubmitted) {
-        setEditTask(todayTask);
-        setReviewStatus(todayTask.status === 'PENDING' ? '' : todayTask.status);
-        setCompletedWork(todayTask.completedWorkDescription || '');
-        setDelayReason(todayTask.delayReason || '');
-        setBlockedReason(todayTask.blockedReason || '');
-        setCompletionPercentage(todayTask.completionPercentage || 0);
-        setShowEveningReview(true);
+      const hasPendingReviews = todayTask.projects?.some((p: any) => 
+        p.status === 'PENDING' || (!p.completedWorkDescription && p.status !== 'DELAYED' && p.status !== 'BLOCKED')
+      );
+      if (hasPendingReviews && !showEveningReview) {
+        handleEditInit(todayTask);
       }
     }
   }, [todayTask, tasks]);
@@ -90,29 +96,83 @@ export const EmployeeDashboard: React.FC = () => {
     if (todayTask) {
       setShowDuplicatePopup(true);
     } else {
+      setSelectedProjects([]);
+      setProjectDetails({});
       setShowCreateModal(true);
     }
   };
 
+  const handleProjectToggle = (projectId: number) => {
+    setSelectedProjects(prev => {
+      if (prev.includes(projectId)) {
+        const next = prev.filter(id => id !== projectId);
+        const newDetails = { ...projectDetails };
+        delete newDetails[projectId];
+        setProjectDetails(newDetails);
+        return next;
+      } else {
+        setProjectDetails(prev => ({
+          ...prev,
+          [projectId]: { taskDescription: '', changesGivenBy: '', changesSummary: '' }
+        }));
+        return [...prev, projectId];
+      }
+    });
+  };
+
+  const handleProjectDetailChange = (projectId: number, field: string, value: string) => {
+    setProjectDetails(prev => ({
+      ...prev,
+      [projectId]: { ...prev[projectId], [field]: value }
+    }));
+  };
+
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectId || !description || !expectedEnd) return;
+
+    let finalExpectedEndDate = expectedEndDate;
+    if (expectedEndDateType === 'today') {
+      finalExpectedEndDate = startDate;
+    } else if (expectedEndDateType === 'tomorrow') {
+      const tomorrow = new Date(startDate);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      finalExpectedEndDate = tomorrow.toISOString().split('T')[0];
+    }
+
+    if (selectedProjects.length === 0 || !startDate || !startTime || !finalExpectedEndDate) return;
+    
+    // Validate required description for each project
+    for (const pid of selectedProjects) {
+      if (!projectDetails[pid]?.taskDescription) {
+        alert('Please provide a task description for all selected projects.');
+        return;
+      }
+    }
+
+    if (new Date(finalExpectedEndDate) < new Date(startDate)) {
+      alert("Expected End Date cannot be before Start Date.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      await tasksApi.create({
-        startTime,
-        expectedCompletionDate: new Date(expectedEnd).toISOString(),
-        projectId: parseInt(projectId),
-        description,
-        changesGivenBy: changesGivenBy || undefined,
-        changesSummary: changesSummary || undefined,
+      const projectsPayload = selectedProjects.map(pid => ({
+        projectId: pid,
+        taskDescription: projectDetails[pid].taskDescription,
+        changesGivenBy: projectDetails[pid].changesGivenBy || undefined,
+        changesSummary: projectDetails[pid].changesSummary || undefined,
         status: 'PENDING',
+      }));
+
+      await tasksApi.create({
+        startDate: new Date(startDate).toISOString(),
+        startTime,
+        expectedEndDate: new Date(finalExpectedEndDate).toISOString(),
+        projects: projectsPayload,
       });
       setShowCreateModal(false);
-      setProjectId('');
-      setDescription('');
-      setChangesGivenBy('');
-      setChangesSummary('');
+      setSelectedProjects([]);
+      setProjectDetails({});
       await fetchDashboardData();
     } catch (err: any) {
       if (err.response?.status === 400) {
@@ -128,36 +188,76 @@ export const EmployeeDashboard: React.FC = () => {
 
   const handleEditInit = (task: any) => {
     setEditTask(task);
-    setReviewStatus(task.status);
-    setCompletedWork(task.completedWorkDescription || '');
-    setDelayReason(task.delayReason || '');
-    setBlockedReason(task.blockedReason || '');
-    setCompletionPercentage(task.completionPercentage || 0);
+    setEditStartTime(task.startTime || '');
+    
+    try {
+      const expDate = task.expectedEndDate ? new Date(task.expectedEndDate) : new Date();
+      if (isNaN(expDate.getTime())) throw new Error("Invalid date");
+      const tzoffset = expDate.getTimezoneOffset() * 60000;
+      const localISODate = new Date(expDate.getTime() - tzoffset).toISOString().split('T')[0];
+      setEditExpectedEndDate(localISODate);
+    } catch (e) {
+      setEditExpectedEndDate(new Date().toISOString().split('T')[0]);
+    }
+
+    const reviews: Record<number, any> = {};
+    if (task.projects) {
+      task.projects.forEach((p: any) => {
+        reviews[p.id] = {
+          id: p.id,
+          status: p.status || 'PENDING',
+          completedWorkDescription: p.completedWorkDescription || '',
+          delayReason: p.delayReason || '',
+          blockedReason: p.blockedReason || '',
+          completionPercentage: p.completionPercentage || 0,
+          screenshotUrl: p.screenshotUrl || undefined,
+          uploadFile: null,
+        };
+      });
+    }
+    setReviewProjects(reviews);
     setShowEveningReview(true);
+  };
+
+  const handleReviewChange = (taskProjectId: number, field: string, value: any) => {
+    setReviewProjects(prev => ({
+      ...prev,
+      [taskProjectId]: { ...prev[taskProjectId], [field]: value }
+    }));
   };
 
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editTask || !reviewStatus) return;
+    if (!editTask) return;
     setIsSubmitting(true);
     try {
-      let screenshotUrl = editTask.screenshotUrl;
-      if (uploadFile) {
-        const uploadRes = await uploadsApi.upload(uploadFile);
-        screenshotUrl = uploadRes.data.url;
+      const projectsPayload = [];
+      
+      for (const [idStr, review] of Object.entries(reviewProjects)) {
+        let finalScreenshotUrl = review.screenshotUrl;
+        if (review.uploadFile) {
+          const uploadRes = await uploadsApi.upload(review.uploadFile);
+          finalScreenshotUrl = uploadRes.data.url;
+        }
+
+        projectsPayload.push({
+          id: parseInt(idStr),
+          status: review.status,
+          completedWorkDescription: review.status === 'COMPLETED' ? review.completedWorkDescription : undefined,
+          delayReason: review.status === 'DELAYED' ? review.delayReason : undefined,
+          blockedReason: review.status === 'BLOCKED' ? review.blockedReason : undefined,
+          completionPercentage: Number(review.completionPercentage),
+          screenshotUrl: finalScreenshotUrl,
+        });
       }
 
       await tasksApi.update(editTask.id, {
-        status: reviewStatus,
-        completedWorkDescription: reviewStatus === 'COMPLETED' ? completedWork : undefined,
-        delayReason: reviewStatus === 'DELAYED' ? delayReason : undefined,
-        blockedReason: reviewStatus === 'BLOCKED' ? blockedReason : undefined,
-        completionPercentage: Number(completionPercentage),
-        screenshotUrl,
+        startTime: editStartTime,
+        expectedEndDate: new Date(editExpectedEndDate).toISOString(),
+        projects: projectsPayload,
       });
 
       setShowEveningReview(false);
-      setUploadFile(null);
       await fetchDashboardData();
     } catch (err) {
       console.error('Failed to submit review:', err);
@@ -175,22 +275,52 @@ export const EmployeeDashboard: React.FC = () => {
     }
   };
 
+  // Flatten tasks for list view
+  const flattenedTasks = useMemo(() => {
+    const flat = [];
+    for (const t of tasks) {
+      if (t.projects && t.projects.length > 0) {
+        for (const p of t.projects) {
+          flat.push({
+            ...t,
+            projectId: p.projectId,
+            project: p.project,
+            taskProjectId: p.id,
+            taskDescription: p.taskDescription,
+            changesGivenBy: p.changesGivenBy,
+            changesSummary: p.changesSummary,
+            status: p.status,
+            delayReason: p.delayReason,
+            blockedReason: p.blockedReason,
+            completedWorkDescription: p.completedWorkDescription,
+            completionPercentage: p.completionPercentage,
+            notes: p.notes,
+            screenshotUrl: p.screenshotUrl, // Assuming screenshot might be on project later, or task
+          });
+        }
+      }
+    }
+    return flat;
+  }, [tasks]);
+
   const filteredTasks = useMemo(() => {
-    let filtered = tasks;
+    let filtered = flattenedTasks;
     if (activeTab === 'COMPLETED') filtered = filtered.filter(t => t.status === 'COMPLETED');
     else if (activeTab === 'IN_PROGRESS') filtered = filtered.filter(t => t.status === 'IN_PROGRESS');
     else if (activeTab === 'DELAYED') filtered = filtered.filter(t => t.status === 'DELAYED');
     else if (activeTab === 'PENDING') filtered = filtered.filter(t => t.status === 'PENDING');
     
     if (searchQuery) {
-      filtered = filtered.filter(t => t.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        t.project?.name.toLowerCase().includes(searchQuery.toLowerCase()));
+      filtered = filtered.filter(t => 
+        (t.taskDescription && t.taskDescription.toLowerCase().includes(searchQuery.toLowerCase())) || 
+        (t.project?.name && t.project.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      );
     }
     if (filterProject) {
       filtered = filtered.filter(t => t.projectId.toString() === filterProject);
     }
     return filtered;
-  }, [tasks, activeTab, searchQuery, filterProject]);
+  }, [flattenedTasks, activeTab, searchQuery, filterProject]);
 
   const tabs: { id: TabType, label: string }[] = [
     { id: 'TODAY', label: "Today's Task" },
@@ -203,8 +333,9 @@ export const EmployeeDashboard: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <ErrorBoundary>
+      <div className="space-y-6 animate-in fade-in duration-200">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-heading font-extrabold text-slate-800">My Tasks</h2>
           <p className="text-xs text-slate-550">Manage your daily work schedules and reviews.</p>
@@ -217,7 +348,6 @@ export const EmployeeDashboard: React.FC = () => {
         </button>
       </div>
 
-      {/* Horizontal Filter Navigation */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-4">
         {tabs.map((tab) => (
           <button
@@ -244,7 +374,7 @@ export const EmployeeDashboard: React.FC = () => {
           {/* TODAY'S TASK VIEW */}
           {activeTab === 'TODAY' && (
             <div className="p-6">
-              {!todayTask ? (
+              {todayTasks.length === 0 ? (
                 <div className="text-center py-16">
                   <div className="mx-auto w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
                     <Calendar className="text-slate-400" size={24} />
@@ -256,51 +386,65 @@ export const EmployeeDashboard: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                <div className="max-w-3xl mx-auto border border-indigo-100 bg-indigo-50/30 rounded-2xl p-6 shadow-sm relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-                  <div className="flex justify-between items-start mb-6">
-                    <div>
-                      <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-700 text-[10px] font-extrabold uppercase rounded-full mb-2">
-                        {todayTask.project?.name}
-                      </span>
-                      <h3 className="text-xl font-heading font-bold text-slate-800">{todayTask.description}</h3>
-                    </div>
-                    <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600">
-                      {todayTask.status}
-                    </span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-y-4 gap-x-8 text-sm mb-6 bg-white p-4 rounded-xl border border-slate-100">
-                    <div>
-                      <span className="text-slate-400 text-xs font-semibold uppercase block mb-1">Date</span>
-                      <span className="font-medium text-slate-800">{new Date(todayTask.date).toLocaleDateString()}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-xs font-semibold uppercase block mb-1">Task Source</span>
-                      <span className="font-medium text-slate-800">{todayTask.employeeId === todayTask.createdById ? 'Self Created' : 'Admin Assigned'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-xs font-semibold uppercase block mb-1">Timing</span>
-                      <span className="font-medium text-slate-800">{todayTask.startTime} - {new Date(todayTask.expectedCompletionDate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                    </div>
-                    {todayTask.changesGivenBy && (
-                      <div>
-                        <span className="text-slate-400 text-xs font-semibold uppercase block mb-1">Changes By</span>
-                        <span className="font-medium text-slate-800">{todayTask.changesGivenBy}</span>
+                <div className="space-y-8">
+                  {todayTasks.map((task) => (
+                    <div key={task.id} className="max-w-4xl mx-auto space-y-6">
+                      <div className="flex justify-between items-center bg-indigo-50 p-4 rounded-xl border border-indigo-100">
+                        <div>
+                          <h3 className="text-lg font-bold text-indigo-900">Today's Workspace</h3>
+                          <p className="text-xs text-indigo-700 font-medium mt-1">
+                            {new Date(task.startDate).toLocaleDateString()} • Started at {task.startTime} • Expected End: {new Date(task.expectedEndDate).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <button onClick={() => handleEditInit(task)} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors">
+                          <Edit size={16} /> Review Tasks
+                        </button>
                       </div>
-                    )}
-                  </div>
-                  
-                  {todayTask.changesSummary && (
-                    <div className="mb-6 bg-amber-50 border border-amber-100 rounded-xl p-4">
-                      <span className="text-amber-800 text-xs font-semibold uppercase block mb-1">Changes Summary</span>
-                      <span className="text-sm text-amber-900">{todayTask.changesSummary}</span>
-                    </div>
-                  )}
 
-                  <div className="flex justify-end">
-                    <button onClick={() => handleEditInit(todayTask)} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors">
-                      <Edit size={16} /> Edit Task / Review
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {task.projects?.map((p: any) => (
+                          <div key={p.id} className="border border-slate-200 rounded-2xl p-5 shadow-sm relative overflow-hidden bg-white">
+                            <div className={`absolute top-0 left-0 w-1 h-full ${p.status === 'COMPLETED' ? 'bg-emerald-500' : p.status === 'IN_PROGRESS' ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
+                            <div className="flex justify-between items-start mb-4">
+                              <span className="inline-block px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-extrabold uppercase rounded-full">
+                                {p.project?.name}
+                              </span>
+                              <span className={`px-2 py-1 border rounded-lg text-[10px] font-bold ${
+                                p.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                p.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                'bg-slate-50 text-slate-600 border-slate-200'
+                              }`}>
+                                {p.status}
+                              </span>
+                            </div>
+                            
+                            <h4 className="font-semibold text-slate-800 text-sm mb-3">{p.taskDescription}</h4>
+                            
+                            {p.changesGivenBy && (
+                              <div className="text-xs text-slate-600 mb-2">
+                                <span className="font-bold text-slate-400">Changes By:</span> {p.changesGivenBy}
+                              </div>
+                            )}
+                            
+                            {p.changesSummary && (
+                              <div className="text-xs text-slate-600 mb-3 line-clamp-2">
+                                <span className="font-bold text-slate-400">Summary:</span> {p.changesSummary}
+                              </div>
+                            )}
+
+                            {p.completedWorkDescription && (
+                              <div className="mt-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-xs">
+                                <span className="font-bold block mb-1">Completed Work:</span> {p.completedWorkDescription}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="text-center mt-6">
+                    <button onClick={() => setShowDuplicatePopup(true)} className="inline-flex items-center gap-2 rounded-xl bg-indigo-50 border border-indigo-200 px-6 py-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors shadow-sm">
+                      <Plus size={16} /> Edit Day's Details
                     </button>
                   </div>
                 </div>
@@ -314,13 +458,13 @@ export const EmployeeDashboard: React.FC = () => {
               {!yesterdayTask ? (
                 <div className="text-center py-16 text-slate-500">No task was logged yesterday.</div>
               ) : (
-                <div className="max-w-3xl mx-auto">
-                  {['IN_PROGRESS', 'DELAYED', 'BLOCKED'].includes(yesterdayTask.status) && !yesterdayTask.carryForwardedTo && !todayTask && (
+                <div className="max-w-4xl mx-auto space-y-6">
+                  {yesterdayTask.projects?.some((p: any) => ['IN_PROGRESS', 'DELAYED', 'BLOCKED'].includes(p.status)) && !yesterdayTask.carryForwardedTo && (
                     <div className="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50 flex items-start gap-4">
                       <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
                       <div className="flex-1">
                         <h4 className="font-bold text-amber-800 mb-1">Carry Forward Task</h4>
-                        <p className="text-sm text-amber-700 mb-4">Would you like to continue yesterday's task today?</p>
+                        <p className="text-sm text-amber-700 mb-4">Would you like to continue yesterday's incomplete projects today?</p>
                         <div className="flex gap-3">
                           <button onClick={() => handleCarryForward(yesterdayTask.id, true)} className="px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700">
                             Carry Forward
@@ -332,27 +476,34 @@ export const EmployeeDashboard: React.FC = () => {
                       </div>
                     </div>
                   )}
-                  <div className="border border-slate-200 rounded-2xl p-6 shadow-sm">
-                    <div className="flex justify-between items-start mb-4">
-                      <h3 className="text-lg font-heading font-bold text-slate-800">{yesterdayTask.description}</h3>
-                      <span className="px-3 py-1 bg-slate-100 border border-slate-200 rounded-lg text-xs font-bold text-slate-600">
-                        {yesterdayTask.status}
-                      </span>
-                    </div>
-                    <p className="text-sm text-slate-600">Project: <span className="font-semibold">{yesterdayTask.project?.name}</span></p>
-                    <p className="text-sm text-slate-600">Date: <span className="font-semibold">{new Date(yesterdayTask.date).toLocaleDateString()}</span></p>
-                    {yesterdayTask.status === 'DELAYED' && yesterdayTask.delayReason && (
-                      <div className="mt-4 p-3 bg-rose-50 border border-rose-100 rounded-lg text-rose-800 text-sm">
-                        <span className="font-bold">Delay Reason:</span> {yesterdayTask.delayReason}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {yesterdayTask.projects?.map((p: any) => (
+                      <div key={p.id} className="border border-slate-200 rounded-2xl p-5 shadow-sm bg-white">
+                        <div className="flex justify-between items-start mb-4">
+                          <span className="inline-block px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-extrabold uppercase rounded-full">
+                            {p.project?.name}
+                          </span>
+                          <span className="px-2 py-1 border rounded-lg text-[10px] font-bold bg-slate-50 text-slate-600 border-slate-200">
+                            {p.status}
+                          </span>
+                        </div>
+                        <h4 className="font-semibold text-slate-800 text-sm mb-3">{p.taskDescription}</h4>
+                        <div className="text-xs text-slate-500 mb-2">Date: {new Date(yesterdayTask.startDate).toLocaleDateString()}</div>
+                        {p.delayReason && (
+                          <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-lg text-rose-800 text-xs">
+                            <span className="font-bold">Delay Reason:</span> {p.delayReason}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* LIST VIEWS (ALL / COMPLETED / IN_PROGRESS / DELAYED / PENDING) */}
+          {/* LIST VIEWS */}
           {['ALL', 'COMPLETED', 'IN_PROGRESS', 'DELAYED', 'PENDING'].includes(activeTab) && (
             <div className="p-6">
               {activeTab === 'ALL' && (
@@ -386,7 +537,7 @@ export const EmployeeDashboard: React.FC = () => {
                     <tr className="bg-slate-200 divide-x divide-slate-400">
                       <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Date</th>
                       <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Project</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Task</th>
+                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Task Description</th>
                       <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Completion</th>
                       <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Screenshot</th>
                       <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Start Time</th>
@@ -403,12 +554,12 @@ export const EmployeeDashboard: React.FC = () => {
                         <td colSpan={11} className="text-center py-12 text-slate-500 text-sm">No tasks found matching criteria.</td>
                       </tr>
                     ) : (
-                      filteredTasks.map(t => (
-                        <tr key={t.id} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
-                          <td className="px-5 py-5 text-sm text-slate-500 font-medium whitespace-nowrap">{new Date(t.date).toLocaleDateString()}</td>
+                      filteredTasks.map((t, idx) => (
+                        <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
+                          <td className="px-5 py-5 text-sm text-slate-500 font-medium whitespace-nowrap">{new Date(t.startDate).toLocaleDateString()}</td>
                           <td className="px-5 py-5 text-sm text-indigo-700 font-bold whitespace-nowrap">{t.project?.name}</td>
                           <td className="px-5 py-5 text-sm text-slate-700 leading-relaxed whitespace-normal min-w-[200px]">
-                            {t.description}
+                            {t.taskDescription}
                           </td>
                           <td className="px-5 py-5 text-sm text-slate-700 font-bold whitespace-nowrap">{t.completionPercentage || 0}%</td>
                           <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">
@@ -420,7 +571,7 @@ export const EmployeeDashboard: React.FC = () => {
                           </td>
                           <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">{t.startTime}</td>
                           <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">
-                            {new Date(t.expectedCompletionDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(t.expectedEndDate).toLocaleDateString()}
                           </td>
                           <td className="px-5 py-5 text-xs font-bold text-slate-700 whitespace-nowrap">
                             {t.status === 'DELAYED' ? <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100">Yes</span> : <span className="text-slate-400">No</span>}
@@ -459,19 +610,20 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODALS */}
-
       {/* Duplicate Popup */}
       {showDuplicatePopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
-            <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 mx-auto mb-4">
-              <AlertTriangle size={24} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 mb-4">
+              <AlertTriangle className="h-8 w-8 text-rose-600" />
             </div>
-            <h3 className="font-heading text-lg font-bold text-slate-800 mb-2">Today's Task Already Exists</h3>
-            <p className="text-sm text-slate-500 mb-6">A task has already been created for today. Would you like to edit the existing task?</p>
-            <div className="flex gap-3 justify-center">
-              <button onClick={() => setShowDuplicatePopup(false)} className="px-4 py-2 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-200">
+            <h3 className="font-heading text-xl font-bold text-slate-800 mb-2">⚠ Today's Task Already Exists</h3>
+            <p className="text-sm text-slate-600 mb-6">A task has already been created today. Would you like to review and edit the existing task instead?</p>
+            <div className="flex justify-center gap-3">
+              <button 
+                onClick={() => setShowDuplicatePopup(false)} 
+                className="px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+              >
                 Cancel
               </button>
               <button 
@@ -479,9 +631,9 @@ export const EmployeeDashboard: React.FC = () => {
                   setShowDuplicatePopup(false);
                   if (todayTask) handleEditInit(todayTask);
                 }} 
-                className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-500 shadow-md"
+                className="px-5 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 shadow-md transition-colors"
               >
-                Edit Existing Task
+                Review Existing Task
               </button>
             </div>
           </div>
@@ -491,49 +643,130 @@ export const EmployeeDashboard: React.FC = () => {
       {/* Create Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pb-4 border-b border-slate-100">
               <h3 className="font-heading text-xl font-bold text-slate-800">Create Today's Task</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X size={20} />
               </button>
             </div>
             
-            <form onSubmit={handleCreateTask} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Project</label>
-                <select value={projectId} onChange={(e) => setProjectId(e.target.value)} required className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20">
-                  <option value="">Select Project</option>
-                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Task Description</label>
-                <textarea value={description} onChange={(e) => setDescription(e.target.value)} required placeholder="What are you working on?" className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[80px]" />
-              </div>
+            <form onSubmit={handleCreateTask} className="space-y-6">
+              
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time</label>
-                  <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" />
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Date *</label>
+                  <input 
+                    type="date" 
+                    value={startDate} 
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setStartDate(e.target.value)} 
+                    required 
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" 
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expected End Time</label>
-                  <input type="datetime-local" value={expectedEnd} onChange={(e) => setExpectedEnd(e.target.value)} required className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" />
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expected End Date *</label>
+                  <div className="space-y-2">
+                    <div className="flex gap-2 text-sm pt-2">
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="endDateType" checked={expectedEndDateType === 'today'} onChange={() => setExpectedEndDateType('today')} className="accent-indigo-600" />
+                        Today
+                      </label>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="endDateType" checked={expectedEndDateType === 'tomorrow'} onChange={() => setExpectedEndDateType('tomorrow')} className="accent-indigo-600" />
+                        Tomorrow
+                      </label>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="radio" name="endDateType" checked={expectedEndDateType === 'custom'} onChange={() => setExpectedEndDateType('custom')} className="accent-indigo-600" />
+                        Custom
+                      </label>
+                    </div>
+                    {expectedEndDateType === 'custom' && (
+                      <input 
+                        type="date" 
+                        value={expectedEndDate} 
+                        min={startDate}
+                        onChange={(e) => setExpectedEndDate(e.target.value)} 
+                        required 
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 animate-in fade-in" 
+                      />
+                    )}
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time *</label>
+                  <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required className="w-full md:w-1/2 rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By (Optional)</label>
-                <input type="text" value={changesGivenBy} onChange={(e) => setChangesGivenBy(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" />
+
+              <div className="border-t border-slate-200 pt-6">
+                <label className="block text-sm font-bold text-slate-800 mb-3">Select Projects *</label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {projects.map(p => (
+                    <label key={p.id} className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-colors ${selectedProjects.includes(p.id) ? 'border-indigo-500 bg-indigo-50 text-indigo-800 shadow-sm' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600'}`}>
+                      <input
+                        type="checkbox"
+                        checked={selectedProjects.includes(p.id)}
+                        onChange={() => handleProjectToggle(p.id)}
+                        className="w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500"
+                      />
+                      <span className="text-sm font-bold">{p.name}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
-              {changesGivenBy && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Summary</label>
-                  <textarea value={changesSummary} onChange={(e) => setChangesSummary(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" />
+
+              {selectedProjects.length > 0 && (
+                <div className="space-y-6 pt-4 border-t border-slate-200">
+                  <h4 className="text-sm font-bold text-slate-800">Project Details</h4>
+                  {selectedProjects.map(pid => {
+                    const project = projects.find(p => p.id === pid);
+                    return (
+                      <div key={pid} className="p-4 rounded-xl border border-indigo-100 bg-white shadow-sm space-y-4">
+                        <div className="flex items-center gap-2 border-b border-indigo-50 pb-2 mb-2">
+                          <CheckSquare className="text-indigo-600" size={16} />
+                          <h5 className="font-bold text-indigo-900">{project?.name}</h5>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Task Description *</label>
+                          <textarea 
+                            value={projectDetails[pid]?.taskDescription || ''} 
+                            onChange={(e) => handleProjectDetailChange(pid, 'taskDescription', e.target.value)} 
+                            required 
+                            placeholder={`What are you working on for ${project?.name}?`} 
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[80px]" 
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By (Optional)</label>
+                            <input 
+                              type="text" 
+                              value={projectDetails[pid]?.changesGivenBy || ''} 
+                              onChange={(e) => handleProjectDetailChange(pid, 'changesGivenBy', e.target.value)} 
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Summary</label>
+                            <input 
+                              type="text" 
+                              value={projectDetails[pid]?.changesSummary || ''} 
+                              onChange={(e) => handleProjectDetailChange(pid, 'changesSummary', e.target.value)} 
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" 
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-              <div className="pt-4 flex justify-end gap-3">
+
+              <div className="pt-6 sticky bottom-0 bg-white border-t border-slate-100 flex justify-end gap-3 mt-8 -mx-6 px-6">
                 <button type="button" onClick={() => setShowCreateModal(false)} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Cancel</button>
-                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 shadow-md disabled:opacity-50 flex items-center gap-2">
+                <button type="submit" disabled={isSubmitting || selectedProjects.length === 0} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 shadow-md disabled:opacity-50 flex items-center gap-2">
                   {isSubmitting && <Loader2 size={16} className="animate-spin" />} Submit Task
                 </button>
               </div>
@@ -542,131 +775,161 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Evening Review Modal (Mandatory popup style) */}
+      {/* Evening Review Modal (Multi-Project) */}
       {showEveningReview && editTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
-          <div className="w-full max-w-xl rounded-2xl border border-slate-700 bg-white shadow-2xl animate-in slide-in-from-bottom-10 duration-300 max-h-[90vh] overflow-y-auto">
-            <div className="bg-slate-900 px-6 py-4 flex items-center justify-between rounded-t-2xl">
-              <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                Today's Work Review
-              </h3>
-              {/* No close button if mandatory, but we'll allow closing if it's manually triggered */}
-              <button onClick={() => setShowEveningReview(false)} className="text-slate-400 hover:text-white">
-                <X size={20} />
-              </button>
-            </div>
-            
-            <form onSubmit={handleReviewSubmit} className="p-6 space-y-5">
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-2">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Assigned Task</span>
-                <p className="text-sm font-semibold text-slate-800">{editTask.description}</p>
+          <ErrorBoundary>
+            <div className="w-full max-w-3xl rounded-2xl border border-slate-700 bg-white shadow-2xl animate-in slide-in-from-bottom-10 duration-300 max-h-[90vh] flex flex-col">
+              <div className="bg-slate-900 px-6 py-4 flex items-center justify-between rounded-t-2xl shrink-0">
+                <h3 className="font-heading text-lg font-bold text-white flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                  Today's Work Review
+                </h3>
+                <button onClick={() => setShowEveningReview(false)} className="text-slate-400 hover:text-white">
+                  <X size={20} />
+                </button>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Today's Status</label>
-                <div className="flex flex-wrap gap-3">
-                  {['COMPLETED', 'IN_PROGRESS', 'DELAYED', 'BLOCKED'].map((st) => (
-                    <label key={st} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border cursor-pointer transition-all ${reviewStatus === st ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
-                      <input 
-                        type="radio" 
-                        name="status" 
-                        value={st} 
-                        checked={reviewStatus === st} 
-                        onChange={(e) => setReviewStatus(e.target.value)} 
-                        className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
-                        required
-                      />
-                      <span className="text-sm font-bold">{st.replace('_', ' ')}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {reviewStatus === 'COMPLETED' && (
-                <div className="animate-in fade-in slide-in-from-top-2">
-                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Completed Work Description</label>
-                  <textarea 
-                    value={completedWork} 
-                    onChange={(e) => setCompletedWork(e.target.value)} 
-                    required 
-                    placeholder="E.g. Created Order APIs, Added Status Flow..."
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[100px]" 
-                  />
-                </div>
-              )}
-
-              {reviewStatus === 'DELAYED' && (
-                <div className="animate-in fade-in slide-in-from-top-2">
-                  <label className="block text-xs font-bold text-rose-600 uppercase tracking-wider mb-1.5">Delay Reason</label>
-                  <textarea 
-                    value={delayReason} 
-                    onChange={(e) => setDelayReason(e.target.value)} 
-                    required 
-                    placeholder="Why was the task delayed?"
-                    className="w-full rounded-xl border border-rose-200 bg-rose-50/30 px-4 py-3 text-sm focus:ring-2 focus:ring-rose-500/20" 
-                  />
-                </div>
-              )}
-
-              {reviewStatus === 'BLOCKED' && (
-                <div className="animate-in fade-in slide-in-from-top-2">
-                  <label className="block text-xs font-bold text-rose-600 uppercase tracking-wider mb-1.5">Blocked Reason</label>
-                  <textarea 
-                    value={blockedReason} 
-                    onChange={(e) => setBlockedReason(e.target.value)} 
-                    required 
-                    placeholder="What is blocking this task?"
-                    className="w-full rounded-xl border border-rose-200 bg-rose-50/30 px-4 py-3 text-sm focus:ring-2 focus:ring-rose-500/20" 
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="flex justify-between items-end mb-1.5">
-                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Completion Percentage</span>
-                  <span className="text-sm font-extrabold text-indigo-600">{completionPercentage}%</span>
-                </label>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  step="5"
-                  value={completionPercentage} 
-                  onChange={(e) => setCompletionPercentage(Number(e.target.value))}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" 
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Upload Screenshot (Optional)</label>
-                <div className="flex items-center justify-center w-full">
-                  <label className="flex flex-col items-center justify-center w-full h-20 border border-slate-300 border-dashed rounded-xl cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <p className="text-sm text-slate-500">
-                        {uploadFile ? <span className="font-bold text-indigo-600">{uploadFile.name}</span> : 'Click to upload'}
-                      </p>
+              
+              <div className="flex-1 overflow-y-auto p-6">
+                <form id="review-form" onSubmit={handleReviewSubmit} className="space-y-8">
+                  
+                  {/* Task Metadata */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex gap-4 items-center">
+                    <div className="flex-1">
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time</label>
+                      <input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} required className="w-full max-w-[200px] rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white" />
                     </div>
-                    <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files && setUploadFile(e.target.files[0])} />
-                  </label>
-                </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expected End Date</label>
+                      <input type="date" value={editExpectedEndDate} onChange={(e) => setEditExpectedEndDate(e.target.value)} required className="w-full max-w-[200px] rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white" />
+                    </div>
+                  </div>
+
+                  {/* Per Project Review */}
+                  <div className="space-y-6">
+                    <h4 className="text-md font-bold text-slate-800 border-b border-slate-200 pb-2">Project Reviews</h4>
+                    {editTask.projects?.map((p: any) => {
+                      const reviewState = reviewProjects[p.id];
+                      if (!reviewState) return null;
+
+                      return (
+                        <div key={p.id} className="border border-slate-200 rounded-2xl p-5 shadow-sm bg-white relative overflow-hidden">
+                          <div className={`absolute top-0 left-0 w-1 h-full ${reviewState.status === 'COMPLETED' ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
+                          
+                          <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
+                            <div>
+                              <span className="inline-block px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-extrabold uppercase rounded-lg mb-2">
+                                {p.project?.name}
+                              </span>
+                              <h5 className="font-bold text-slate-800 text-sm">{p.taskDescription}</h5>
+                            </div>
+                          </div>
+
+                          <div className="space-y-5">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Status</label>
+                              <div className="flex flex-wrap gap-2">
+                                {['COMPLETED', 'IN_PROGRESS', 'DELAYED', 'BLOCKED'].map((st) => (
+                                  <label key={st} className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-all ${reviewState.status === st ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
+                                    <input 
+                                      type="radio" 
+                                      name={`status-${p.id}`} 
+                                      value={st} 
+                                      checked={reviewState.status === st} 
+                                      onChange={(e) => handleReviewChange(p.id, 'status', e.target.value)} 
+                                      className="w-3.5 h-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                                      required
+                                    />
+                                    <span className="text-xs font-bold">{st.replace('_', ' ')}</span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+
+                            {reviewState.status === 'COMPLETED' && (
+                              <div className="animate-in fade-in slide-in-from-top-2">
+                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Completed Work Description</label>
+                                <textarea 
+                                  value={reviewState.completedWorkDescription} 
+                                  onChange={(e) => handleReviewChange(p.id, 'completedWorkDescription', e.target.value)} 
+                                  required 
+                                  placeholder="What was completed?"
+                                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]" 
+                                />
+                              </div>
+                            )}
+
+                            {reviewState.status === 'DELAYED' && (
+                              <div className="animate-in fade-in slide-in-from-top-2">
+                                <label className="block text-xs font-bold text-rose-600 uppercase tracking-wider mb-1.5">Delay Reason</label>
+                                <textarea 
+                                  value={reviewState.delayReason} 
+                                  onChange={(e) => handleReviewChange(p.id, 'delayReason', e.target.value)} 
+                                  required 
+                                  placeholder="Why was the task delayed?"
+                                  className="w-full rounded-xl border border-rose-200 bg-rose-50/30 px-3 py-2 text-sm focus:ring-2 focus:ring-rose-500/20" 
+                                />
+                              </div>
+                            )}
+
+                            {reviewState.status === 'BLOCKED' && (
+                              <div className="animate-in fade-in slide-in-from-top-2">
+                                <label className="block text-xs font-bold text-rose-600 uppercase tracking-wider mb-1.5">Blocked Reason</label>
+                                <textarea 
+                                  value={reviewState.blockedReason} 
+                                  onChange={(e) => handleReviewChange(p.id, 'blockedReason', e.target.value)} 
+                                  required 
+                                  placeholder="What is blocking this task?"
+                                  className="w-full rounded-xl border border-rose-200 bg-rose-50/30 px-3 py-2 text-sm focus:ring-2 focus:ring-rose-500/20" 
+                                />
+                              </div>
+                            )}
+
+                            <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                              <div className="flex-1">
+                                <label className="flex justify-between items-end mb-1.5">
+                                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Completion</span>
+                                  <span className="text-xs font-extrabold text-indigo-600">{reviewState.completionPercentage}%</span>
+                                </label>
+                                <input 
+                                  type="range" 
+                                  min="0" 
+                                  max="100" 
+                                  step="5"
+                                  value={reviewState.completionPercentage} 
+                                  onChange={(e) => handleReviewChange(p.id, 'completionPercentage', Number(e.target.value))}
+                                  className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" 
+                                />
+                              </div>
+                            </div>
+
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </form>
               </div>
 
-              <div className="pt-4 border-t border-slate-100">
+              <div className="shrink-0 p-4 border-t border-slate-200 bg-white rounded-b-2xl">
                 <button 
                   type="submit" 
-                  disabled={isSubmitting || !reviewStatus} 
+                  form="review-form"
+                  disabled={isSubmitting} 
                   className="w-full py-3.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2 transition-all"
                 >
                   {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />} 
                   Submit Review
                 </button>
               </div>
-            </form>
-          </div>
+
+            </div>
+          </ErrorBoundary>
         </div>
       )}
 
     </div>
+    </ErrorBoundary>
   );
 };

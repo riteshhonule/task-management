@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { tasksApi, projectsApi, usersApi } from '../services/api';
-import { Plus, User, Search, Edit2, Trash2, Calendar, Loader2 } from 'lucide-react';
+import { Plus, User, Search, Edit2, Trash2, Calendar, Loader2, CheckSquare, X } from 'lucide-react';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 export const AssignTasks: React.FC = () => {
   const [tasks, setTasks] = useState<any[]>([]);
@@ -16,28 +17,23 @@ export const AssignTasks: React.FC = () => {
 
   // Create Task Form State
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [extraForTaskId, setExtraForTaskId] = useState<number | null>(null);
   const [employeeId, setEmployeeId] = useState('');
-  const [projectId, setProjectId] = useState('');
   const [startTime, setStartTime] = useState('09:00 AM');
-  const [expectedEnd, setExpectedEnd] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState('MEDIUM');
-  const [changesGivenBy, setChangesGivenBy] = useState('');
-  const [changesSummary, setChangesSummary] = useState('');
-  const [notes, setNotes] = useState('');
+  const [expectedEndDate, setExpectedEndDate] = useState('');
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Multi-Project logic
+  const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
+  const [projectDetails, setProjectDetails] = useState<Record<number, { taskDescription: string, changesGivenBy: string, changesSummary: string, priority: string, notes: string }>>({});
 
   // Edit Task Form State
   const [editingTask, setEditingTask] = useState<any | null>(null);
   const [editEmployeeId, setEditEmployeeId] = useState('');
-  const [editProjectId, setEditProjectId] = useState('');
   const [editStartTime, setEditStartTime] = useState('');
-  const [editExpectedEnd, setEditExpectedEnd] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editPriority, setEditPriority] = useState('MEDIUM');
-  const [editChangesGivenBy, setEditChangesGivenBy] = useState('');
-  const [editChangesSummary, setEditChangesSummary] = useState('');
-  const [editNotes, setEditNotes] = useState('');
+  const [editExpectedEndDate, setEditExpectedEndDate] = useState('');
+  const [editReviewProjects, setEditReviewProjects] = useState<Record<number, any>>({});
   const [isUpdating, setIsUpdating] = useState(false);
 
   const loadData = async () => {
@@ -67,75 +63,174 @@ export const AssignTasks: React.FC = () => {
     loadData();
   }, [filterEmployee, filterProject, filterStatus, searchQuery]);
 
+  const handleProjectToggle = (projectId: number) => {
+    setSelectedProjects(prev => {
+      if (prev.includes(projectId)) {
+        const next = prev.filter(id => id !== projectId);
+        const newDetails = { ...projectDetails };
+        delete newDetails[projectId];
+        setProjectDetails(newDetails);
+        return next;
+      } else {
+        setProjectDetails(prev => ({
+          ...prev,
+          [projectId]: { taskDescription: '', changesGivenBy: '', changesSummary: '', priority: 'MEDIUM', notes: '' }
+        }));
+        return [...prev, projectId];
+      }
+    });
+  };
+
+  const handleProjectDetailChange = (projectId: number, field: string, value: string) => {
+    setProjectDetails(prev => ({
+      ...prev,
+      [projectId]: { ...prev[projectId], [field]: value }
+    }));
+  };
+
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!employeeId || !projectId || !description || !expectedEnd) return;
+    if (!employeeId || selectedProjects.length === 0 || !expectedEndDate) return;
+    
+    for (const pid of selectedProjects) {
+      if (!projectDetails[pid]?.taskDescription) {
+        alert('Please provide a task description for all selected projects.');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
-      await tasksApi.create({
-        employeeId: parseInt(employeeId),
-        projectId: parseInt(projectId),
-        startTime,
-        expectedCompletionDate: new Date(expectedEnd).toISOString(),
-        description,
-        priority,
-        changesGivenBy: changesGivenBy || undefined,
-        changesSummary: changesSummary || undefined,
-        notes: notes || undefined,
-      });
+      const projectsPayload = selectedProjects.map(pid => ({
+        projectId: pid,
+        taskDescription: projectDetails[pid].taskDescription,
+        changesGivenBy: projectDetails[pid].changesGivenBy || undefined,
+        changesSummary: projectDetails[pid].changesSummary || undefined,
+        priority: projectDetails[pid].priority,
+        notes: projectDetails[pid].notes || undefined,
+        status: 'PENDING',
+      }));
+
+      if (extraForTaskId) {
+        await tasksApi.update(extraForTaskId, {
+          projects: projectsPayload,
+        });
+      } else {
+        await tasksApi.create({
+          employeeId: parseInt(employeeId),
+          startDate: new Date(startDate).toISOString(),
+          startTime,
+          expectedEndDate: new Date(expectedEndDate).toISOString(),
+          projects: projectsPayload,
+        });
+      }
 
       // Clear Form
+      setExtraForTaskId(null);
       setEmployeeId('');
-      setProjectId('');
+      setSelectedProjects([]);
+      setProjectDetails({});
       setStartTime('09:00 AM');
-      setExpectedEnd('');
-      setDescription('');
-      setPriority('MEDIUM');
-      setChangesGivenBy('');
-      setChangesSummary('');
-      setNotes('');
+      setExpectedEndDate('');
       setShowCreateModal(false);
       await loadData();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert(err.response?.data?.message || err.message || 'Failed to assign task');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleAddExtraTaskInit = (task: any) => {
+    setExtraForTaskId(task.id);
+    setEmployeeId(task.employeeId.toString());
+    setSelectedProjects([]);
+    setProjectDetails({});
+    setStartTime(task.startTime);
+    try {
+      const expDate = task.expectedEndDate ? new Date(task.expectedEndDate) : new Date();
+      if (isNaN(expDate.getTime())) throw new Error("Invalid date");
+      const tzoffset = expDate.getTimezoneOffset() * 60000;
+      const localISODate = new Date(expDate.getTime() - tzoffset).toISOString().split('T')[0];
+      setExpectedEndDate(localISODate);
+    } catch (e) {
+      setExpectedEndDate(new Date().toISOString().split('T')[0]);
+    }
+    setShowCreateModal(true);
+  };
+
   const handleEditInit = (task: any) => {
     setEditingTask(task);
     setEditEmployeeId(task.employeeId.toString());
-    setEditProjectId(task.projectId.toString());
-    setEditStartTime(task.startTime);
-    // Format to datetime-local expected string
-    const expDate = new Date(task.expectedCompletionDate);
-    const tzoffset = expDate.getTimezoneOffset() * 60000; //offset in milliseconds
-    const localISOTime = new Date(expDate.getTime() - tzoffset).toISOString().slice(0, 16);
-    setEditExpectedEnd(localISOTime);
-    setEditDescription(task.description);
-    setEditPriority(task.priority);
-    setEditChangesGivenBy(task.changesGivenBy || '');
-    setEditChangesSummary(task.changesSummary || '');
-    setEditNotes(task.notes || '');
+    setEditStartTime(task.startTime || '');
+    
+    try {
+      const expDate = task.expectedEndDate ? new Date(task.expectedEndDate) : new Date();
+      if (isNaN(expDate.getTime())) throw new Error("Invalid date");
+      const tzoffset = expDate.getTimezoneOffset() * 60000;
+      const localISODate = new Date(expDate.getTime() - tzoffset).toISOString().split('T')[0];
+      setEditExpectedEndDate(localISODate);
+    } catch (e) {
+      setEditExpectedEndDate(new Date().toISOString().split('T')[0]);
+    }
+
+    const reviews: Record<number, any> = {};
+    if (task.projects) {
+      task.projects.forEach((p: any) => {
+        reviews[p.id] = {
+          id: p.id,
+          projectId: p.projectId,
+          taskDescription: p.taskDescription || '',
+          changesGivenBy: p.changesGivenBy || '',
+          changesSummary: p.changesSummary || '',
+          priority: p.priority || 'MEDIUM',
+          status: p.status || 'PENDING',
+          delayReason: p.delayReason || '',
+          blockedReason: p.blockedReason || '',
+          completedWorkDescription: p.completedWorkDescription || '',
+          completionPercentage: p.completionPercentage || 0,
+          notes: p.notes || '',
+        };
+      });
+    }
+    setEditReviewProjects(reviews);
+  };
+
+  const handleEditReviewChange = (taskProjectId: number, field: string, value: any) => {
+    setEditReviewProjects(prev => ({
+      ...prev,
+      [taskProjectId]: { ...prev[taskProjectId], [field]: value }
+    }));
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingTask || !editEmployeeId || !editProjectId || !editDescription || !editExpectedEnd) return;
+    if (!editingTask || !editEmployeeId || !editExpectedEndDate) return;
     setIsUpdating(true);
     try {
+      const projectsPayload = Object.values(editReviewProjects).map(r => ({
+        id: r.id,
+        projectId: r.projectId,
+        taskDescription: r.taskDescription,
+        changesGivenBy: r.changesGivenBy || undefined,
+        changesSummary: r.changesSummary || undefined,
+        priority: r.priority,
+        status: r.status,
+        delayReason: r.delayReason || undefined,
+        blockedReason: r.blockedReason || undefined,
+        completedWorkDescription: r.completedWorkDescription || undefined,
+        completionPercentage: Number(r.completionPercentage),
+        notes: r.notes || undefined,
+      }));
+
       await tasksApi.update(editingTask.id, {
         employeeId: parseInt(editEmployeeId),
-        projectId: parseInt(editProjectId),
         startTime: editStartTime,
-        expectedCompletionDate: new Date(editExpectedEnd).toISOString(),
-        description: editDescription,
-        priority: editPriority,
-        changesGivenBy: editChangesGivenBy || undefined,
-        changesSummary: editChangesSummary || undefined,
-        notes: editNotes || undefined,
+        expectedEndDate: new Date(editExpectedEndDate).toISOString(),
+        projects: projectsPayload,
       });
+
       setEditingTask(null);
       await loadData();
     } catch (err) {
@@ -146,7 +241,7 @@ export const AssignTasks: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this task?')) return;
+    if (!window.confirm('Are you sure you want to delete this daily task?')) return;
     try {
       await tasksApi.delete(id);
       await loadData();
@@ -167,7 +262,8 @@ export const AssignTasks: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
+    <ErrorBoundary>
+      <div className="space-y-8 animate-in fade-in duration-200">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-heading font-extrabold text-slate-800 font-bold">Delegate Tasks</h2>
@@ -175,7 +271,11 @@ export const AssignTasks: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => {
+            setExtraForTaskId(null);
+            setEmployeeId('');
+            setShowCreateModal(true);
+          }}
           className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-indigo-600/10 transition-all flex items-center gap-2 cursor-pointer"
         >
           <Plus size={16} /> Assign Task
@@ -235,6 +335,7 @@ export const AssignTasks: React.FC = () => {
             <option value="COMPLETED">COMPLETED</option>
             <option value="DELAYED">DELAYED</option>
             <option value="ON_HOLD">ON HOLD</option>
+            <option value="BLOCKED">BLOCKED</option>
           </select>
         </div>
       </div>
@@ -249,46 +350,24 @@ export const AssignTasks: React.FC = () => {
           No tasks found matching your filters.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6">
           {tasks.map((t) => (
             <div
               key={t.id}
-              className="bg-white rounded-2xl p-5 border border-slate-200 hover:border-slate-300 transition-all shadow-sm flex flex-col justify-between gap-4"
+              className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between gap-4"
             >
-              <div className="space-y-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-1.5 text-slate-500 text-xs font-semibold">
-                    <User size={13} className="text-indigo-650" /> {t.employee?.name}
-                  </div>
-                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${getPriorityColor(t.priority)}`}>
-                    {t.priority}
-                  </span>
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-1.5 text-slate-800 text-sm font-semibold">
+                  <User size={16} className="text-indigo-650" /> {t.employee?.name}
                 </div>
-
-                <h4 className="text-sm font-bold text-slate-800">{t.description}</h4>
-
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] text-indigo-600 bg-indigo-50 px-2 py-0.5 border border-indigo-100 rounded">
-                    {t.project?.name}
-                  </span>
-                  <span className="text-[10px] text-slate-600 bg-slate-50 px-2 py-0.5 border border-slate-200 rounded">
-                    {t.status}
-                  </span>
-                </div>
-
-                {t.delayReason && (
-                  <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-100 text-xs text-rose-700">
-                    <strong>Delay Reason:</strong> {t.delayReason}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
-                <span className="flex items-center gap-1">
-                  <Calendar size={12} /> {new Date(t.date).toLocaleDateString()}
-                </span>
-
                 <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleAddExtraTaskInit(t)}
+                    className="p-1.5 rounded-lg text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 transition-colors cursor-pointer flex items-center gap-1"
+                    title="Add Extra Task"
+                  >
+                    <Plus size={13} /> <span className="text-[10px] font-bold">Extra</span>
+                  </button>
                   <button
                     onClick={() => handleEditInit(t)}
                     className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors cursor-pointer"
@@ -305,6 +384,38 @@ export const AssignTasks: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {t.projects?.map((p: any) => (
+                  <div key={p.id} className="border border-slate-200 rounded-xl p-4 bg-slate-50">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-indigo-700 bg-indigo-50 border-indigo-100">
+                        {p.project?.name}
+                      </span>
+                      <div className="flex gap-1">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${getPriorityColor(p.priority)}`}>
+                          {p.priority}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-slate-600 bg-white">
+                          {p.status}
+                        </span>
+                      </div>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-800 mb-2">{p.taskDescription}</h4>
+                    {p.delayReason && (
+                      <div className="mt-2 p-2 rounded-lg bg-rose-50 border border-rose-100 text-xs text-rose-700">
+                        <strong>Delay:</strong> {p.delayReason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end text-xs text-slate-500 mt-2">
+                <span className="flex items-center gap-1">
+                  <Calendar size={12} /> {new Date(t.startDate).toLocaleDateString()}
+                </span>
+              </div>
             </div>
           ))}
         </div>
@@ -313,19 +424,25 @@ export const AssignTasks: React.FC = () => {
       {/* CREATE MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <h3 className="font-heading text-lg font-bold text-slate-800 mb-4">Assign Task</h3>
-            <form onSubmit={handleCreateSubmit} className="space-y-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pb-4 border-b border-slate-100">
+              <h3 className="font-heading text-xl font-bold text-slate-800">Assign New Task</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateSubmit} className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Assignee (Employee)
+                    Assignee (Employee) *
                   </label>
                   <select
                     value={employeeId}
                     onChange={(e) => setEmployeeId(e.target.value)}
                     required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
                   >
                     <option value="">Select Assignee...</option>
                     {employees.map((e) => (
@@ -338,111 +455,114 @@ export const AssignTasks: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Project
+                    Start Date *
                   </label>
-                  <select
-                    value={projectId}
-                    onChange={(e) => setProjectId(e.target.value)}
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
                     required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  >
-                    <option value="">Select Project...</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Start Time
+                    Start Time *
                   </label>
                   <input
-                    type="text"
+                    type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    placeholder="e.g. 09:00 AM"
                     required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Expected Completion
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={expectedEnd}
-                    onChange={(e) => setExpectedEnd(e.target.value)}
-                    required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Task Description
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Task specifications..."
-                  required
-                  className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 min-h-20"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Priority
-                  </label>
-                  <select
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
                     className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  >
-                    <option value="LOW">LOW</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="HIGH">HIGH</option>
-                  </select>
+                  />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Changes Given By
+                    Expected End Date *
                   </label>
                   <input
-                    type="text"
-                    value={changesGivenBy}
-                    onChange={(e) => setChangesGivenBy(e.target.value)}
-                    placeholder="e.g. Abhijeet Sir (optional)"
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                    type="date"
+                    value={expectedEndDate}
+                    onChange={(e) => setExpectedEndDate(e.target.value)}
+                    required
+                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
                   />
                 </div>
               </div>
 
-              {changesGivenBy && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Changes Summary
-                  </label>
-                  <textarea
-                    value={changesSummary}
-                    onChange={(e) => setChangesSummary(e.target.value)}
-                    placeholder="Brief changes details..."
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  />
+              <div className="border-t border-slate-200 pt-6">
+                <label className="block text-sm font-bold text-slate-800 mb-3">Select Projects *</label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {projects.map(p => (
+                    <label key={p.id} className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-colors ${selectedProjects.includes(p.id) ? 'border-indigo-500 bg-indigo-50 text-indigo-800 shadow-sm' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600'}`}>
+                      <input
+                        type="checkbox"
+                        checked={selectedProjects.includes(p.id)}
+                        onChange={() => handleProjectToggle(p.id)}
+                        className="w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500"
+                      />
+                      <span className="text-sm font-bold">{p.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {selectedProjects.length > 0 && (
+                <div className="space-y-6 pt-4 border-t border-slate-200">
+                  <h4 className="text-sm font-bold text-slate-800">Project Details</h4>
+                  {selectedProjects.map(pid => {
+                    const project = projects.find(p => p.id === pid);
+                    return (
+                      <div key={pid} className="p-4 rounded-xl border border-indigo-100 bg-slate-50 shadow-sm space-y-4">
+                        <div className="flex items-center gap-2 border-b border-indigo-50 pb-2 mb-2">
+                          <CheckSquare className="text-indigo-600" size={16} />
+                          <h5 className="font-bold text-indigo-900">{project?.name}</h5>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Task Description *</label>
+                          <textarea 
+                            value={projectDetails[pid]?.taskDescription || ''} 
+                            onChange={(e) => handleProjectDetailChange(pid, 'taskDescription', e.target.value)} 
+                            required 
+                            placeholder={`What needs to be done for ${project?.name}?`} 
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]" 
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Priority</label>
+                            <select 
+                              value={projectDetails[pid]?.priority || 'MEDIUM'} 
+                              onChange={(e) => handleProjectDetailChange(pid, 'priority', e.target.value)} 
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                            >
+                              <option value="LOW">LOW</option>
+                              <option value="MEDIUM">MEDIUM</option>
+                              <option value="HIGH">HIGH</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By</label>
+                            <input 
+                              type="text" 
+                              value={projectDetails[pid]?.changesGivenBy || ''} 
+                              onChange={(e) => handleProjectDetailChange(pid, 'changesGivenBy', e.target.value)} 
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" 
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
-              <div className="flex gap-3 justify-end pt-3">
+              <div className="flex gap-3 justify-end pt-3 border-t border-slate-200 mt-6">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
@@ -452,7 +572,7 @@ export const AssignTasks: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || selectedProjects.length === 0}
                   className="rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-indigo-505 transition-colors flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-600/10"
                 >
                   {isSubmitting ? <Loader2 size={14} className="animate-spin" /> : 'Assign Task'}
@@ -466,19 +586,25 @@ export const AssignTasks: React.FC = () => {
       {/* EDIT MODAL */}
       {editingTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <h3 className="font-heading text-lg font-bold text-slate-800 mb-4">Edit Task Assignment</h3>
-            <form onSubmit={handleEditSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pb-4 border-b border-slate-100">
+              <h3 className="font-heading text-lg font-bold text-slate-800">Edit Task Assignment</h3>
+              <button onClick={() => setEditingTask(null)} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditSubmit} className="space-y-6">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Assignee (Employee)
+                    Assignee
                   </label>
                   <select
                     value={editEmployeeId}
                     onChange={(e) => setEditEmployeeId(e.target.value)}
                     required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
                   >
                     {employees.map((e) => (
                       <option key={e.id} value={e.id}>
@@ -490,106 +616,98 @@ export const AssignTasks: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Project
-                  </label>
-                  <select
-                    value={editProjectId}
-                    onChange={(e) => setEditProjectId(e.target.value)}
-                    required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  >
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                     Start Time
                   </label>
                   <input
-                    type="text"
+                    type="time"
                     value={editStartTime}
                     onChange={(e) => setEditStartTime(e.target.value)}
                     required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Expected Completion
+                    Expected End Date
                   </label>
                   <input
-                    type="datetime-local"
-                    value={editExpectedEnd}
-                    onChange={(e) => setEditExpectedEnd(e.target.value)}
+                    type="date"
+                    value={editExpectedEndDate}
+                    onChange={(e) => setEditExpectedEndDate(e.target.value)}
                     required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Task Description
-                </label>
-                <textarea
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  required
-                  className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 min-h-20 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                />
+              <div className="space-y-4 pt-4 border-t border-slate-200">
+                <h4 className="text-sm font-bold text-slate-800">Project Specifics</h4>
+                {editingTask.projects?.map((p: any) => {
+                  const rev = editReviewProjects[p.id];
+                  if (!rev) return null;
+                  return (
+                    <div key={p.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-indigo-700 bg-indigo-50 border-indigo-100">
+                          {p.project?.name}
+                        </span>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Task Description</label>
+                        <textarea
+                          value={rev.taskDescription}
+                          onChange={(e) => handleEditReviewChange(p.id, 'taskDescription', e.target.value)}
+                          required
+                          className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 min-h-[60px]"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Priority</label>
+                          <select
+                            value={rev.priority}
+                            onChange={(e) => handleEditReviewChange(p.id, 'priority', e.target.value)}
+                            className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800"
+                          >
+                            <option value="LOW">LOW</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="HIGH">HIGH</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
+                          <select
+                            value={rev.status}
+                            onChange={(e) => handleEditReviewChange(p.id, 'status', e.target.value)}
+                            className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800"
+                          >
+                            <option value="PENDING">PENDING</option>
+                            <option value="IN_PROGRESS">IN PROGRESS</option>
+                            <option value="COMPLETED">COMPLETED</option>
+                            <option value="DELAYED">DELAYED</option>
+                            <option value="ON_HOLD">ON HOLD</option>
+                            <option value="BLOCKED">BLOCKED</option>
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By</label>
+                          <input
+                            type="text"
+                            value={rev.changesGivenBy}
+                            onChange={(e) => handleEditReviewChange(p.id, 'changesGivenBy', e.target.value)}
+                            className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Priority
-                  </label>
-                  <select
-                    value={editPriority}
-                    onChange={(e) => setEditPriority(e.target.value)}
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  >
-                    <option value="LOW">LOW</option>
-                    <option value="MEDIUM">MEDIUM</option>
-                    <option value="HIGH">HIGH</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Changes Given By
-                  </label>
-                  <input
-                    type="text"
-                    value={editChangesGivenBy}
-                    onChange={(e) => setEditChangesGivenBy(e.target.value)}
-                    placeholder="e.g. Mane Sir"
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                  Changes Summary
-                </label>
-                <textarea
-                  value={editChangesSummary}
-                  onChange={(e) => setEditChangesSummary(e.target.value)}
-                  placeholder="Details..."
-                  className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                />
-              </div>
-
-              <div className="flex gap-3 justify-end pt-3">
+              <div className="flex gap-3 justify-end pt-3 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setEditingTask(null)}
@@ -610,5 +728,6 @@ export const AssignTasks: React.FC = () => {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 };

@@ -2,7 +2,7 @@
 CREATE TYPE "Role" AS ENUM ('SUPER_ADMIN', 'ADMIN', 'EMPLOYEE');
 
 -- CreateEnum
-CREATE TYPE "TaskStatus" AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'DELAYED', 'ON_HOLD');
+CREATE TYPE "TaskStatus" AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'DELAYED', 'ON_HOLD', 'BLOCKED');
 
 -- CreateEnum
 CREATE TYPE "TaskPriority" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
@@ -46,18 +46,21 @@ CREATE TABLE "Project" (
 -- CreateTable
 CREATE TABLE "Task" (
     "id" SERIAL NOT NULL,
-    "date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "startDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "employeeId" INTEGER NOT NULL,
     "startTime" TEXT NOT NULL,
-    "expectedCompletionDate" TIMESTAMP(3) NOT NULL,
+    "expectedEndDate" TIMESTAMP(3) NOT NULL,
     "projectId" INTEGER NOT NULL,
-    "description" TEXT NOT NULL,
+    "taskDescription" TEXT NOT NULL,
     "changesGivenBy" TEXT,
     "changesSummary" TEXT,
     "priority" "TaskPriority" NOT NULL DEFAULT 'MEDIUM',
     "status" "TaskStatus" NOT NULL DEFAULT 'PENDING',
     "delayReason" TEXT,
+    "blockedReason" TEXT,
     "notes" TEXT,
+    "completedWorkDescription" TEXT,
+    "completionPercentage" INTEGER DEFAULT 0,
     "carryForwardedFromId" INTEGER,
     "deletedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -128,6 +131,8 @@ CREATE TABLE "Message" (
     "senderId" INTEGER NOT NULL,
     "content" TEXT NOT NULL,
     "type" "MessageType" NOT NULL DEFAULT 'NORMAL',
+    "recipientIds" INTEGER[],
+    "isEveryone" BOOLEAN NOT NULL DEFAULT false,
     "deletedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,

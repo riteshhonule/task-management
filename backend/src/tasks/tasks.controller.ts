@@ -103,7 +103,7 @@ export class TasksController {
   @Delete(':id')
   @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Soft delete a task (Admin/SuperAdmin only)' })
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.tasksService.remove(id);
+  remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+    return this.tasksService.remove(id, user.id, user.role);
   }
 }

@@ -13,61 +13,57 @@ export class TasksService {
   ) {}
 
   async create(dto: CreateTaskDto, currentUserId: number, currentUserRole: Role) {
-    // If user is employee or employeeId is not provided, force own ID
     let targetEmployeeId = currentUserId;
     if (currentUserRole !== Role.EMPLOYEE && dto.employeeId) {
       targetEmployeeId = dto.employeeId;
     }
 
-    const taskDate = dto.date ? new Date(dto.date) : new Date();
-    const startOfDay = new Date(taskDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(taskDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    const taskDate = dto.startDate ? new Date(dto.startDate) : new Date();
+    taskDate.setHours(0, 0, 0, 0);
+    const nextDay = new Date(taskDate);
+    nextDay.setDate(nextDay.getDate() + 1);
 
     const existingTask = await this.prisma.task.findFirst({
       where: {
         employeeId: targetEmployeeId,
-        date: { gte: startOfDay, lte: endOfDay },
+        startDate: { gte: taskDate, lt: nextDay },
         deletedAt: null,
       },
     });
 
     if (existingTask) {
-      throw new BadRequestException('A task has already been created for today.');
+      throw new BadRequestException('A task already exists for this employee on this date');
     }
 
-    // Verify project is active
-    const project = await this.prisma.project.findFirst({
-      where: { id: dto.projectId, deletedAt: null },
-    });
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
-    if (project.isArchived) {
-      throw new BadRequestException('Cannot create tasks in an archived project');
+    if (!dto.projects || dto.projects.length === 0) {
+      throw new BadRequestException('At least one project must be selected');
     }
 
     const task = await this.prisma.task.create({
       data: {
-        date: taskDate,
+        startDate: taskDate,
         employeeId: targetEmployeeId,
         startTime: dto.startTime,
-        expectedCompletionDate: new Date(dto.expectedCompletionDate),
-        projectId: dto.projectId,
-        description: dto.description,
-        changesGivenBy: dto.changesGivenBy,
-        changesSummary: dto.changesSummary,
-        priority: dto.priority || TaskPriority.MEDIUM,
-        status: dto.status || TaskStatus.PENDING,
-        delayReason: dto.delayReason,
-        notes: dto.notes,
+        expectedEndDate: new Date(dto.expectedEndDate),
+        projects: {
+          create: dto.projects.map(p => ({
+            projectId: p.projectId,
+            taskDescription: p.taskDescription,
+            changesGivenBy: p.changesGivenBy,
+            changesSummary: p.changesSummary,
+            priority: p.priority || TaskPriority.MEDIUM,
+            status: p.status || TaskStatus.PENDING,
+            delayReason: p.delayReason,
+            notes: p.notes,
+            completedWorkDescription: p.completedWorkDescription,
+            completionPercentage: p.completionPercentage,
+            blockedReason: p.blockedReason,
+          }))
+        }
       },
       include: {
-        project: true,
-        employee: {
-          select: { id: true, name: true, email: true },
-        },
+        projects: { include: { project: true } },
+        employee: { select: { id: true, name: true, email: true } },
       },
     });
 
@@ -77,8 +73,21 @@ export class TasksService {
         targetEmployeeId,
         'TASK_ASSIGNED',
         'New Task Assigned',
-        `You have been assigned a new task: "${dto.description}" for project "${project.name}".`,
+        `You have been assigned a new multi-project task with ${dto.projects.length} project(s).`,
       );
+    } else {
+      const admins = await this.prisma.user.findMany({
+        where: { role: { in: [Role.ADMIN, Role.SUPER_ADMIN] }, deletedAt: null },
+        select: { id: true },
+      });
+      for (const admin of admins) {
+        await this.notificationsService.createNotification(
+          admin.id,
+          'TASK_CREATED_BY_EMP',
+          'Task Created',
+          `Employee "${task.employee.name}" added a new task with ${dto.projects.length} project(s).`
+        );
+      }
     }
 
     return task;
@@ -99,14 +108,26 @@ export class TasksService {
     if (filters.employeeId) {
       whereClause.employeeId = filters.employeeId;
     }
-    if (filters.projectId) {
-      whereClause.projectId = filters.projectId;
-    }
-    if (filters.status) {
-      whereClause.status = filters.status;
-    }
-    if (filters.priority) {
-      whereClause.priority = filters.priority;
+    
+    // Project/status/priority filters now apply to the relation
+    if (filters.projectId || filters.status || filters.priority || filters.search) {
+      whereClause.projects = { some: { deletedAt: null } };
+      
+      if (filters.projectId) {
+        whereClause.projects.some.projectId = filters.projectId;
+      }
+      if (filters.status) {
+        whereClause.projects.some.status = filters.status;
+      }
+      if (filters.priority) {
+        whereClause.projects.some.priority = filters.priority;
+      }
+      if (filters.search) {
+        whereClause.projects.some.OR = [
+          { taskDescription: { contains: filters.search, mode: 'insensitive' } },
+          { project: { name: { contains: filters.search, mode: 'insensitive' } } },
+        ];
+      }
     }
 
     // Date range filters
@@ -114,47 +135,42 @@ export class TasksService {
     if (filters.dateFilter === 'today') {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      whereClause.date = { gte: start, lte: end };
+      whereClause.startDate = { gte: start, lte: end };
     } else if (filters.dateFilter === 'week') {
       const day = now.getDay();
-      const diff = now.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
       const start = new Date(now.setDate(diff));
       start.setHours(0, 0, 0, 0);
       const end = new Date(start);
       end.setDate(start.getDate() + 6);
       end.setHours(23, 59, 59, 999);
-      whereClause.date = { gte: start, lte: end };
+      whereClause.startDate = { gte: start, lte: end };
     } else if (filters.dateFilter === 'month') {
       const start = new Date(now.getFullYear(), now.getMonth(), 1);
       const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-      whereClause.date = { gte: start, lte: end };
+      whereClause.startDate = { gte: start, lte: end };
     } else if (filters.dateFilter === 'custom' && filters.startDate && filters.endDate) {
-      whereClause.date = {
+      whereClause.startDate = {
         gte: new Date(filters.startDate),
         lte: new Date(filters.endDate),
       };
     }
 
-    if (filters.search) {
-      whereClause.OR = [
-        { description: { contains: filters.search, mode: 'insensitive' } },
-        { employee: { name: { contains: filters.search, mode: 'insensitive' } } },
-        { project: { name: { contains: filters.search, mode: 'insensitive' } } },
-      ];
-    }
-
     return this.prisma.task.findMany({
       where: whereClause,
       include: {
-        project: true,
+        projects: { 
+          where: { deletedAt: null },
+          include: { 
+            project: true,
+            updates: { orderBy: { createdAt: 'desc' } }
+          } 
+        },
         employee: {
           select: { id: true, name: true, email: true },
         },
-        updates: {
-          orderBy: { createdAt: 'desc' },
-        },
       },
-      orderBy: { date: 'desc' },
+      orderBy: { startDate: 'desc' },
     });
   }
 
@@ -162,12 +178,15 @@ export class TasksService {
     const task = await this.prisma.task.findFirst({
       where: { id, deletedAt: null },
       include: {
-        project: true,
+        projects: { 
+          where: { deletedAt: null },
+          include: { 
+            project: true,
+            updates: { orderBy: { createdAt: 'desc' } }
+          } 
+        },
         employee: {
           select: { id: true, name: true, email: true },
-        },
-        updates: {
-          orderBy: { createdAt: 'desc' },
         },
         carryForwardedTo: true,
       },
@@ -181,91 +200,174 @@ export class TasksService {
   async update(id: number, dto: UpdateTaskDto, currentUserId: number, currentUserRole: Role) {
     const task = await this.findOne(id);
 
-    // Employees can only update their own tasks
     if (currentUserRole === Role.EMPLOYEE && task.employeeId !== currentUserId) {
       throw new ForbiddenException('You can only modify your own tasks');
     }
 
-    const previousStatus = task.status;
-    const targetStatus = dto.status || previousStatus;
-
-    // Build values to update
     const updateData: any = {};
-    if (dto.date) updateData.date = new Date(dto.date);
+    if (dto.startDate) updateData.startDate = new Date(dto.startDate);
     if (dto.startTime) updateData.startTime = dto.startTime;
-    if (dto.expectedCompletionDate) updateData.expectedCompletionDate = new Date(dto.expectedCompletionDate);
-    if (dto.projectId) updateData.projectId = dto.projectId;
-    if (dto.description) updateData.description = dto.description;
-    if (dto.changesGivenBy !== undefined) updateData.changesGivenBy = dto.changesGivenBy;
-    if (dto.changesSummary !== undefined) updateData.changesSummary = dto.changesSummary;
-    if (dto.priority) updateData.priority = dto.priority;
-    if (dto.status) updateData.status = dto.status;
-    if (dto.delayReason !== undefined) updateData.delayReason = dto.delayReason;
-    if (dto.blockedReason !== undefined) updateData.blockedReason = dto.blockedReason;
-    if (dto.completedWorkDescription !== undefined) updateData.completedWorkDescription = dto.completedWorkDescription;
-    if (dto.completionPercentage !== undefined) updateData.completionPercentage = dto.completionPercentage;
-    if (dto.notes !== undefined) updateData.notes = dto.notes;
+    if (dto.expectedEndDate) updateData.expectedEndDate = new Date(dto.expectedEndDate);
     if (currentUserRole !== Role.EMPLOYEE && dto.employeeId) {
       updateData.employeeId = dto.employeeId;
     }
 
-    const updatedTask = await this.prisma.task.update({
-      where: { id },
-      data: updateData,
-      include: {
-        project: true,
-        employee: {
-          select: { id: true, name: true, email: true },
-        },
-      },
-    });
-
-    // Write to TaskUpdate history table if status changed or remarks/screenshot provided
-    if (previousStatus !== targetStatus || dto.remarks || dto.screenshotUrl) {
-      await this.prisma.taskUpdate.create({
-        data: {
-          taskId: id,
-          statusBefore: previousStatus,
-          statusAfter: targetStatus,
-          remarks: dto.remarks || 'Status update',
-          screenshotUrl: dto.screenshotUrl,
-        },
+    let updatedTask;
+    
+    // Process top level Task updates
+    if (Object.keys(updateData).length > 0) {
+      await this.prisma.task.update({
+        where: { id },
+        data: updateData,
       });
+    }
 
-      // If an employee completes a task, notify administrators
-      if (targetStatus === TaskStatus.COMPLETED && previousStatus !== TaskStatus.COMPLETED) {
-        const admins = await this.prisma.user.findMany({
-          where: {
-            role: { in: [Role.ADMIN, Role.SUPER_ADMIN] },
-            deletedAt: null,
-          },
-          select: { id: true },
-        });
+    let completionNotified = false;
 
-        for (const admin of admins) {
-          await this.notificationsService.createNotification(
-            admin.id,
-            'TASK_COMPLETED',
-            'Task Completed',
-            `Employee "${updatedTask.employee.name}" completed task: "${updatedTask.description}" in project "${updatedTask.project.name}".`,
-          );
+    // Process TaskProjects
+    if (dto.projects && dto.projects.length > 0) {
+      for (const p of dto.projects) {
+        if (p.id) {
+          // Update existing
+          const existingProject = task.projects.find(x => x.id === p.id);
+          if (existingProject) {
+            const previousStatus = existingProject.status;
+            const targetStatus = p.status || previousStatus;
+            
+            await this.prisma.taskProject.update({
+              where: { id: p.id },
+              data: {
+                projectId: p.projectId,
+                taskDescription: p.taskDescription,
+                changesGivenBy: p.changesGivenBy,
+                changesSummary: p.changesSummary,
+                priority: p.priority,
+                status: p.status,
+                delayReason: p.delayReason,
+                blockedReason: p.blockedReason,
+                completedWorkDescription: p.completedWorkDescription,
+                completionPercentage: p.completionPercentage,
+                notes: p.notes,
+              }
+            });
+
+            if (previousStatus !== targetStatus || p.remarks || p.screenshotUrl) {
+              await this.prisma.taskUpdate.create({
+                data: {
+                  taskProjectId: p.id,
+                  statusBefore: previousStatus,
+                  statusAfter: targetStatus,
+                  remarks: p.remarks || 'Status update',
+                  screenshotUrl: p.screenshotUrl,
+                },
+              });
+            }
+
+            if (targetStatus === TaskStatus.COMPLETED && previousStatus !== TaskStatus.COMPLETED) {
+              completionNotified = true;
+            }
+          }
+        } else {
+          // Create new project entry in this task
+          await this.prisma.taskProject.create({
+            data: {
+              taskId: id,
+              projectId: p.projectId,
+              taskDescription: p.taskDescription,
+              changesGivenBy: p.changesGivenBy,
+              changesSummary: p.changesSummary,
+              priority: p.priority || TaskPriority.MEDIUM,
+              status: p.status || TaskStatus.PENDING,
+              delayReason: p.delayReason,
+              blockedReason: p.blockedReason,
+              completedWorkDescription: p.completedWorkDescription,
+              completionPercentage: p.completionPercentage,
+              notes: p.notes,
+            }
+          });
         }
+      }
+    }
+
+    updatedTask = await this.findOne(id);
+
+    if (completionNotified) {
+      const admins = await this.prisma.user.findMany({
+        where: { role: { in: [Role.ADMIN, Role.SUPER_ADMIN] }, deletedAt: null },
+        select: { id: true },
+      });
+      for (const admin of admins) {
+        await this.notificationsService.createNotification(
+          admin.id,
+          'TASK_COMPLETED',
+          'Task Completed',
+          `Employee "${updatedTask.employee.name}" completed one or more projects in their daily task.`,
+        );
+      }
+    }
+
+    if (currentUserRole === Role.EMPLOYEE) {
+      const admins = await this.prisma.user.findMany({
+        where: { role: { in: [Role.ADMIN, Role.SUPER_ADMIN] }, deletedAt: null },
+        select: { id: true },
+      });
+      for (const admin of admins) {
+        await this.notificationsService.createNotification(
+          admin.id,
+          'TASK_UPDATED',
+          'Task Updated',
+          `Employee "${updatedTask.employee.name}" updated their daily task.`
+        );
+      }
+    } else {
+      if (updatedTask.employeeId !== currentUserId) {
+        await this.notificationsService.createNotification(
+          updatedTask.employeeId,
+          'TASK_UPDATED',
+          'Task Updated by Admin',
+          `An admin has updated your daily task.`
+        );
       }
     }
 
     return updatedTask;
   }
 
-  async remove(id: number) {
-    await this.findOne(id);
-    return this.prisma.task.update({
+  async remove(id: number, currentUserId: number, currentUserRole: Role) {
+    const task = await this.findOne(id);
+    const updated = await this.prisma.task.update({
       where: { id },
       data: { deletedAt: new Date() },
+      include: { employee: true },
     });
+
+    if (currentUserRole === Role.EMPLOYEE) {
+      const admins = await this.prisma.user.findMany({
+        where: { role: { in: [Role.ADMIN, Role.SUPER_ADMIN] }, deletedAt: null },
+        select: { id: true },
+      });
+      for (const admin of admins) {
+        await this.notificationsService.createNotification(
+          admin.id,
+          'TASK_DELETED',
+          'Task Deleted',
+          `Employee "${updated.employee.name}" deleted their task.`
+        );
+      }
+    } else {
+      if (updated.employeeId !== currentUserId) {
+        await this.notificationsService.createNotification(
+          updated.employeeId,
+          'TASK_DELETED',
+          'Task Deleted by Admin',
+          `An admin has deleted your task.`
+        );
+      }
+    }
+    return updated;
   }
 
   async checkCarryForward(userId: number) {
-    // Find incomplete tasks from yesterday or earlier
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
@@ -273,11 +375,11 @@ export class TasksService {
       where: {
         employeeId: userId,
         deletedAt: null,
-        date: { lt: startOfToday },
-        status: { in: [TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED] },
-        carryForwardedTo: null, // Not carried forward already
+        startDate: { lt: startOfToday },
+        projects: { some: { status: { in: [TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED] } } },
+        carryForwardedTo: null,
       },
-      include: { project: true },
+      include: { projects: { include: { project: true } } },
     });
 
     return incompleteTasks;
@@ -295,42 +397,56 @@ export class TasksService {
 
     if (carryForward) {
       const today = new Date();
-      // Auto create new task for current day
+      
+      const incompleteProjects = task.projects.filter(p => 
+        ([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED] as TaskStatus[]).includes(p.status)
+      );
+
       const newTask = await this.prisma.task.create({
         data: {
-          date: today,
+          startDate: today,
           employeeId: userId,
           startTime: task.startTime,
-          expectedCompletionDate: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 18, 0, 0),
-          projectId: task.projectId,
-          description: task.description,
-          changesGivenBy: task.changesGivenBy,
-          changesSummary: task.changesSummary,
-          priority: task.priority,
-          status: TaskStatus.PENDING,
-          notes: `Carried forward from yesterday (Task ID: ${task.id}).`,
+          expectedEndDate: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 18, 0, 0),
           carryForwardedFromId: task.id,
+          projects: {
+            create: incompleteProjects.map(p => ({
+              projectId: p.projectId,
+              taskDescription: p.taskDescription,
+              changesGivenBy: p.changesGivenBy,
+              changesSummary: p.changesSummary,
+              priority: p.priority,
+              status: TaskStatus.PENDING,
+              notes: `Carried forward from yesterday.`,
+            }))
+          }
         },
       });
 
-      // Update old yesterday task status to ON_HOLD or DELAYED
-      await this.prisma.task.update({
-        where: { id: taskId },
-        data: {
-          status: TaskStatus.ON_HOLD,
-          notes: `${task.notes || ''} [Carried forward to today (Task ID: ${newTask.id})].`.trim(),
-        },
-      });
+      for (const p of incompleteProjects) {
+        await this.prisma.taskProject.update({
+          where: { id: p.id },
+          data: {
+            status: TaskStatus.ON_HOLD,
+            notes: `${p.notes || ''} [Carried forward to today].`.trim(),
+          },
+        });
+      }
 
       return { message: 'Task carried forward successfully', newTask };
     } else {
-      // Mark as dismissed by keeping status as is or marking it in notes
-      await this.prisma.task.update({
-        where: { id: taskId },
-        data: {
-          notes: `${task.notes || ''} [Carry forward dismissed].`.trim(),
-        },
-      });
+      // Just mark notes for incomplete ones
+      const incompleteProjects = task.projects.filter(p => 
+        ([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED] as TaskStatus[]).includes(p.status)
+      );
+      for (const p of incompleteProjects) {
+        await this.prisma.taskProject.update({
+          where: { id: p.id },
+          data: {
+            notes: `${p.notes || ''} [Carry forward dismissed].`.trim(),
+          },
+        });
+      }
       return { message: 'Carry forward dismissed' };
     }
   }
@@ -344,9 +460,9 @@ export class TasksService {
     const [
       totalEmployees,
       tasksToday,
-      completedToday,
-      delayedToday,
-      pendingToday,
+      completedProjectsToday,
+      delayedProjectsToday,
+      pendingProjectsToday,
     ] = await Promise.all([
       this.prisma.user.count({
         where: { role: Role.EMPLOYEE, deletedAt: null },
@@ -354,33 +470,32 @@ export class TasksService {
       this.prisma.task.count({
         where: {
           deletedAt: null,
-          date: { gte: startOfToday, lte: endOfToday },
+          startDate: { gte: startOfToday, lte: endOfToday },
         },
       }),
-      this.prisma.task.count({
+      this.prisma.taskProject.count({
         where: {
           deletedAt: null,
-          date: { gte: startOfToday, lte: endOfToday },
+          task: { startDate: { gte: startOfToday, lte: endOfToday } },
           status: TaskStatus.COMPLETED,
         },
       }),
-      this.prisma.task.count({
+      this.prisma.taskProject.count({
         where: {
           deletedAt: null,
-          date: { gte: startOfToday, lte: endOfToday },
+          task: { startDate: { gte: startOfToday, lte: endOfToday } },
           status: TaskStatus.DELAYED,
         },
       }),
-      this.prisma.task.count({
+      this.prisma.taskProject.count({
         where: {
           deletedAt: null,
-          date: { gte: startOfToday, lte: endOfToday },
+          task: { startDate: { gte: startOfToday, lte: endOfToday } },
           status: TaskStatus.PENDING,
         },
       }),
     ]);
 
-    // Active Employees definition: employee users who created/updated tasks or had activities in the last 3 days
     const threeDaysAgo = new Date();
     threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
 
@@ -389,20 +504,19 @@ export class TasksService {
         role: Role.EMPLOYEE,
         deletedAt: null,
         OR: [
-          { tasks: { some: { date: { gte: threeDaysAgo } } } },
+          { tasks: { some: { startDate: { gte: threeDaysAgo } } } },
           { activityLogs: { some: { createdAt: { gte: threeDaysAgo } } } },
         ],
       },
     });
 
-    // Make sure we at least return 0 if no active employees found
     return {
       totalEmployees,
       activeEmployees: Math.max(activeEmployeesCount, 0),
-      tasksAssignedToday: tasksToday,
-      completedTasksToday: completedToday,
-      delayedTasksToday: delayedToday,
-      pendingTasksToday: pendingToday,
+      tasksAssignedToday: tasksToday, // number of daily task sheets
+      completedTasksToday: completedProjectsToday, // number of completed projects
+      delayedTasksToday: delayedProjectsToday,
+      pendingTasksToday: pendingProjectsToday,
     };
   }
 }

@@ -73,43 +73,53 @@ model Project {
   isArchived  Boolean   @default(false)
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  tasks       Task[]    @relation("ProjectTasks")
+  updatedAt    DateTime      @updatedAt
+  taskProjects TaskProject[] @relation("ProjectTasks")
 }
 
 model Task {
   id                      Int            @id @default(autoincrement())
-  date                    DateTime       @default(now())
+  startDate               DateTime       @default(now())
   employeeId              Int
   employee                User           @relation("EmployeeTasks", fields: [employeeId], references: [id])
   startTime               String
-  expectedCompletionDate  DateTime
-  projectId               Int
-  project                 Project        @relation("ProjectTasks", fields: [projectId], references: [id])
-  description             String
-  changesGivenBy          String?
-  changesSummary          String?
-  priority                TaskPriority   @default(MEDIUM)
-  status                  TaskStatus     @default(PENDING)
-  delayReason             String?
-  blockedReason           String?
-  notes                   String?
-  completedWorkDescription String?
-  completionPercentage    Int?           @default(0)
+  expectedEndDate         DateTime
+  projects                TaskProject[]  @relation("TaskProjectsRelation")
   carryForwardedFromId    Int?           @unique
   carryForwardedFrom      Task?          @relation("CarryForwardRelation", fields: [carryForwardedFromId], references: [id])
   carryForwardedTo        Task?          @relation("CarryForwardRelation")
   deletedAt               DateTime?
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
-  updates                 TaskUpdate[]   @relation("TaskUpdates")
   attachments             Attachment[]   @relation("TaskAttachments")
 }
 
+model TaskProject {
+  id                       Int            @id @default(autoincrement())
+  taskId                   Int
+  task                     Task           @relation("TaskProjectsRelation", fields: [taskId], references: [id], onDelete: Cascade)
+  projectId                Int
+  project                  Project        @relation("ProjectTasks", fields: [projectId], references: [id])
+  taskDescription          String
+  changesGivenBy           String?
+  changesSummary           String?
+  priority                 TaskPriority   @default(MEDIUM)
+  status                   TaskStatus     @default(PENDING)
+  delayReason              String?
+  blockedReason            String?
+  notes                    String?
+  completedWorkDescription String?
+  completionPercentage     Int?           @default(0)
+  deletedAt                DateTime?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  updates                  TaskUpdate[]   @relation("TaskProjectUpdates")
+}
+
 model TaskUpdate {
-  id           Int        @id @default(autoincrement())
-  taskId       Int
-  task         Task       @relation("TaskUpdates", fields: [taskId], references: [id])
+  id           Int          @id @default(autoincrement())
+  taskProjectId Int
+  taskProject  TaskProject  @relation("TaskProjectUpdates", fields: [taskProjectId], references: [id], onDelete: Cascade)
   statusBefore TaskStatus
   statusAfter  TaskStatus
   remarks      String?
