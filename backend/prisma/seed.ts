@@ -31,15 +31,15 @@ async function main() {
 
   // Create default admin password hash
   const salt = await bcrypt.genSalt(10);
-  const passwordHash = await bcrypt.hash('Admin@12345', salt);
+  const passwordHash = await bcrypt.hash('superadmin@12345', salt);
 
   // Seed Super Admin
   const adminUser = await prisma.user.upsert({
-    where: { email: 'admin@company.com' },
+    where: { email: 'superadmin@company.com' },
     update: {},
     create: {
-      email: 'admin@company.com',
-      name: 'System Admin',
+      email: 'superadmin@company.com',
+      name: 'Super Admin',
       password: passwordHash,
       role: Role.SUPER_ADMIN,
     },
@@ -49,44 +49,44 @@ async function main() {
   // Seed standard Admin (for testing)
   const regularAdminHash = await bcrypt.hash('Admin@12345', salt);
   await prisma.user.upsert({
-    where: { email: 'regularadmin@company.com' },
+    where: { email: 'admin@company.com' },
     update: {},
     create: {
-      email: 'regularadmin@company.com',
-      name: 'Abhijeet Sir',
+      email: 'admin@company.com',
+      name: 'Admin',
       password: regularAdminHash,
       role: Role.ADMIN,
     },
   });
-  console.log('Regular Admin seeded successfully.');
+  console.log('Admin seeded successfully.');
 
-  // Seed default Employee
-  const employeeHash = await bcrypt.hash('Employee@12345', salt);
-  const employeeUser = await prisma.user.upsert({
-    where: { email: 'employee@company.com' },
-    update: {},
-    create: {
-      email: 'employee@company.com',
-      name: 'John Doe',
-      password: employeeHash,
-      role: Role.EMPLOYEE,
-    },
-  });
-  console.log(`Employee seeded successfully: ${employeeUser.email}`);
+  // // Seed default Employee
+  // const employeeHash = await bcrypt.hash('Employee@12345', salt);
+  // const employeeUser = await prisma.user.upsert({
+  //   where: { email: 'employee@company.com' },
+  //   update: {},
+  //   create: {
+  //     email: 'employee@company.com',
+  //     name: 'John Doe',
+  //     password: employeeHash,
+  //     role: Role.EMPLOYEE,
+  //   },
+  // });
+  // console.log(`Employee seeded successfully: ${employeeUser.email}`);
 
-  // Seed second Employee (Adwaita)
-  const adwaitaHash = await bcrypt.hash('Adwaita@12345', salt);
-  const adwaitaUser = await prisma.user.upsert({
-    where: { email: 'adwaita@company.com' },
-    update: {},
-    create: {
-      email: 'adwaita@company.com',
-      name: 'Adwaita',
-      password: adwaitaHash,
-      role: Role.EMPLOYEE,
-    },
-  });
-  console.log(`Employee seeded successfully: ${adwaitaUser.email}`);
+  // // Seed second Employee (Adwaita)
+  // const adwaitaHash = await bcrypt.hash('Adwaita@12345', salt);
+  // const adwaitaUser = await prisma.user.upsert({
+  //   where: { email: 'adwaita@company.com' },
+  //   update: {},
+  //   create: {
+  //     email: 'adwaita@company.com',
+  //     name: 'Adwaita',
+  //     password: adwaitaHash,
+  //     role: Role.EMPLOYEE,
+  //   },
+  // });
+  // console.log(`Employee seeded successfully: ${adwaitaUser.email}`);
 
   // Fetch all projects for random assignment
   const dbProjects = await prisma.project.findMany();
