@@ -49,6 +49,6 @@ export class MessagesController {
   @Get('pending-mandatory')
   @ApiOperation({ summary: 'Get pending mandatory messages requiring attention (popup triggers)' })
   getPendingMandatory(@CurrentUser() user: User) {
-    return this.messagesService.getPendingMandatoryMessages(user.id);
+    return this.messagesService.getPendingMessages(user.id);
   }
 }

@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authApi } from '../services/api';
 import { connectSocket, disconnectSocket } from '../services/socket';
+import { requestForToken, onMessageListener } from '../firebase/firebase';
+import api from '../services/api';
 
 interface User {
   id: number;
@@ -68,6 +70,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
         },
       );
+      
+      // Initialize Firebase Cloud Messaging
+      try {
+        const token = await requestForToken();
+        if (token) {
+          await api.post('/firebase/token', { fcmToken: token, deviceType: 'WEB' });
+        }
+        
+        onMessageListener().then((payload: any) => {
+          console.log('[Foreground] Received Firebase message: ', payload);
+        }).catch(err => console.log('failed to setup listener: ', err));
+      } catch(err) {
+        console.error('FCM Token error:', err);
+      }
     } catch (err) {
       console.error('Error fetching profile', err);
       logout();
@@ -101,12 +117,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Fetch user notifications list
       await fetchNotifications();
+      
+      // Initialize Firebase Cloud Messaging
+      try {
+        const fcmToken = await requestForToken();
+        if (fcmToken) {
+          await api.post('/firebase/token', { fcmToken, deviceType: 'WEB' });
+        }
+      } catch(err) {
+        console.error('FCM Token error on login:', err);
+      }
+
     } catch (error) {
       throw error;
     }
   };
 
   const logout = () => {
+    // Fire and forget FCM removal
+    requestForToken().then(token => {
+      if (token) {
+        api.post('/firebase/remove-token', { fcmToken: token }).catch(() => {});
+      }
+    }).catch(() => {});
+
     localStorage.removeItem('token');
     setToken(null);
     setUser(null);

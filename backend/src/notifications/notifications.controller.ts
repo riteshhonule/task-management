@@ -13,9 +13,15 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get current user notifications' })
+  @ApiOperation({ summary: 'Get current user received notifications' })
   getUserNotifications(@CurrentUser() user: User) {
     return this.notificationsService.getUserNotifications(user.id);
+  }
+
+  @Get('sent')
+  @ApiOperation({ summary: 'Get current user sent notifications' })
+  getSentNotifications(@CurrentUser() user: User) {
+    return this.notificationsService.getSentNotifications(user.id);
   }
 
   @Patch(':id/read')

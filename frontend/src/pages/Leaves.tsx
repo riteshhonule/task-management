@@ -186,39 +186,39 @@ export const Leaves: React.FC = () => {
           ) : leaves.length === 0 ? (
             <p className="text-xs text-slate-500 text-center py-10">No leave applications registered.</p>
           ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white border border-slate-200 shadow-sm">
               <div className="max-h-[75vh] overflow-auto">
                 <table className="w-full text-left border-collapse min-w-max">
                   <thead className="sticky top-0 z-20 bg-slate-200 outline outline-1 outline-slate-400 shadow-sm">
                     <tr className="bg-slate-200 divide-x divide-slate-400">
-                      {isAdmin && <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Employee Name</th>}
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Duration</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider w-[350px]">Reason</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Status</th>
-                      {isAdmin && <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider text-right">Actions</th>}
+                      {isAdmin && <th className="px-4 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider text-center align-middle">Employee Name</th>}
+                      <th className="px-4 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider text-center align-middle">Duration</th>
+                      <th className="px-4 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider w-[350px] text-center align-middle">Reason</th>
+                      <th className="px-4 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider text-center align-middle">Status</th>
+                      {isAdmin && <th className="px-4 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider text-center align-middle">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-400">
                     {leaves.map((l) => (
                       <tr key={l.id} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
                         {isAdmin && (
-                          <td className="px-5 py-5 text-sm font-bold text-slate-800 whitespace-nowrap">
+                          <td className="px-2 py-1.5 text-sm font-bold text-slate-800 whitespace-nowrap text-center align-middle">
                             {l.employee?.name || 'Unknown Employee'}
                           </td>
                         )}
-                        <td className="px-5 py-5 text-xs text-slate-600 whitespace-nowrap">
+                        <td className="px-2 py-1.5 text-xs text-slate-600 whitespace-nowrap text-center align-middle">
                           {new Date(l.startDate).toLocaleDateString()} <span className="text-slate-400 mx-1">to</span> {new Date(l.endDate).toLocaleDateString()}
                         </td>
-                        <td className="px-5 py-5 text-xs text-slate-700 whitespace-normal leading-relaxed">
+                        <td className="px-2 py-1.5 text-xs text-slate-700 whitespace-normal leading-relaxed text-center align-middle">
                           {l.reason}
                         </td>
-                        <td className="px-5 py-5 text-xs whitespace-nowrap">
+                        <td className="px-2 py-1.5 text-xs whitespace-nowrap text-center align-middle">
                           <span className={`px-2.5 py-1 rounded-md font-bold border inline-block ${getStatusColor(l.status)}`}>
                             {l.status}
                           </span>
                         </td>
                         {isAdmin && (
-                          <td className="px-5 py-5 text-xs text-right whitespace-nowrap">
+                          <td className="px-2 py-1.5 text-xs whitespace-nowrap text-center align-middle">
                             {l.status === 'PENDING' ? (
                               <div className="flex items-center justify-end gap-2">
                                 <button

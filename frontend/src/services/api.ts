@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3000';
+const API_URL = 'http://localhost:3003';
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -43,6 +43,8 @@ export const projectsApi = {
   create: (data: any) => apiClient.post('/projects', data),
   update: (id: number, data: any) => apiClient.patch(`/projects/${id}`, data),
   delete: (id: number) => apiClient.delete(`/projects/${id}`),
+  myAllocations: () => apiClient.get('/projects/allocations/mine'),
+  acceptAllocation: (id: number) => apiClient.patch(`/projects/allocations/${id}/accept`),
 };
 
 // Tasks Service endpoints
@@ -56,11 +58,14 @@ export const tasksApi = {
   handleCarryForward: (data: { taskId: number; carryForward: boolean }) =>
     apiClient.post('/tasks/carry-forward', data),
   getMetrics: () => apiClient.get('/tasks/dashboard-metrics'),
+  acceptPending: (taskId: number) => apiClient.post(`/tasks/${taskId}/accept-pending`),
+  rejectPending: (taskId: number, reason: string) => apiClient.post(`/tasks/${taskId}/reject-pending`, { reason }),
 };
 
 // Notifications Service endpoints
 export const notificationsApi = {
   list: () => apiClient.get('/notifications'),
+  listSent: () => apiClient.get('/notifications/sent'),
   read: (id: number) => apiClient.patch(`/notifications/${id}/read`),
   readAll: () => apiClient.post('/notifications/read-all'),
 };

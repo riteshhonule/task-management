@@ -12,6 +12,7 @@ import { AnnouncementsModule } from './announcements/announcements.module';
 import { LeavesModule } from './leaves/leaves.module';
 import { ReportsModule } from './reports/reports.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { FirebaseModule } from './firebase/firebase.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -28,6 +29,7 @@ import { ConfigModule } from '@nestjs/config';
     LeavesModule,
     ReportsModule,
     UploadsModule,
+    FirebaseModule,
   ],
   controllers: [AppController],
   providers: [AppService],

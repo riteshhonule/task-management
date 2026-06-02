@@ -3,41 +3,50 @@ import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
-import { tasksApi, messagesApi } from '../services/api';
-import { HelpCircle, AlertTriangle, MessageSquare } from 'lucide-react';
+import { messagesApi } from '../services/api';
+import { AlertTriangle, MessageSquare, X, Send } from 'lucide-react';
 import { GlobalNotificationPopup } from './GlobalNotificationPopup';
+import { io } from 'socket.io-client';
 
 export const Layout: React.FC = () => {
   const { token, user, loading } = useAuth();
 
   // Carry Forward State
-  const [pendingCarryForwards, setPendingCarryForwards] = useState<any[]>([]);
-  const [currentCarryForward, setCurrentCarryForward] = useState<any | null>(null);
 
   // Mandatory Messages Blocker State
   const [pendingMandatoryMessages, setPendingMandatoryMessages] = useState<any[]>([]);
   const [currentMandatoryMessage, setCurrentMandatoryMessage] = useState<any | null>(null);
-  const [mandatoryResponse, setMandatoryResponse] = useState<'ACCEPT' | 'REJECT' | 'COMMENT'>('ACCEPT');
   const [mandatoryComment, setMandatoryComment] = useState('');
+  const [mandatoryError, setMandatoryError] = useState('');
   const [submittingResponse, setSubmittingResponse] = useState(false);
+
+  // Normal Messages State
+  const [pendingNormalMessages, setPendingNormalMessages] = useState<any[]>([]);
+  const [currentNormalMessage, setCurrentNormalMessage] = useState<any | null>(null);
+  const [normalComment, setNormalComment] = useState('');
+  const [submittingNormalResponse, setSubmittingNormalResponse] = useState(false);
+
+  // Responsive Sidebar State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Load checks for employee users
   const runEmployeeChecks = async () => {
     if (!user || user.role !== 'EMPLOYEE') return;
 
     try {
-      // 1. Check Carry Forwards
-      const carryRes = await tasksApi.checkCarryForward();
-      setPendingCarryForwards(carryRes.data);
-      if (carryRes.data.length > 0) {
-        setCurrentCarryForward(carryRes.data[0]);
+      // 2. Check Pending Messages (Both Mandatory and Normal)
+      const msgRes = await messagesApi.getPendingMandatory();
+      const mandatoryMsgs = msgRes.data.filter((m: any) => m.type === 'MANDATORY_RESPONSE');
+      const normalMsgs = msgRes.data.filter((m: any) => m.type !== 'MANDATORY_RESPONSE');
+
+      setPendingMandatoryMessages(mandatoryMsgs);
+      if (mandatoryMsgs.length > 0) {
+        setCurrentMandatoryMessage(mandatoryMsgs[0]);
       }
 
-      // 2. Check Mandatory Message Blocker
-      const msgRes = await messagesApi.getPendingMandatory();
-      setPendingMandatoryMessages(msgRes.data);
-      if (msgRes.data.length > 0) {
-        setCurrentMandatoryMessage(msgRes.data[0]);
+      setPendingNormalMessages(normalMsgs);
+      if (normalMsgs.length > 0) {
+        setCurrentNormalMessage(normalMsgs[0]);
       }
     } catch (err) {
       console.error('Error during employee flow checks:', err);
@@ -47,36 +56,49 @@ export const Layout: React.FC = () => {
   useEffect(() => {
     if (token && user) {
       runEmployeeChecks();
+      
+      const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000', { transports: ['websocket'] });
+      socket.on('connect', () => socket.emit('register', user.id));
+
+      socket.on('new_message', (msg: any) => {
+        if (msg.type === 'MANDATORY_RESPONSE') {
+          setPendingMandatoryMessages(prev => [...prev, msg]);
+        } else {
+          setPendingNormalMessages(prev => [...prev, msg]);
+        }
+      });
+
+      return () => {
+        socket.disconnect();
+      };
     }
   }, [token, user]);
 
-  const handleCarryForwardSubmit = async (carry: boolean) => {
-    if (!currentCarryForward) return;
-    try {
-      await tasksApi.handleCarryForward({
-        taskId: currentCarryForward.id,
-        carryForward: carry,
-      });
-
-      // Filter resolved and look for next
-      const nextCarry = pendingCarryForwards.filter((t) => t.id !== currentCarryForward.id);
-      setPendingCarryForwards(nextCarry);
-      if (nextCarry.length > 0) {
-        setCurrentCarryForward(nextCarry[0]);
-      } else {
-        setCurrentCarryForward(null);
-      }
-    } catch (err) {
-      console.error('Failed to update carry forward', err);
+  useEffect(() => {
+    if (!currentMandatoryMessage && pendingMandatoryMessages.length > 0) {
+      setCurrentMandatoryMessage(pendingMandatoryMessages[0]);
     }
-  };
+  }, [pendingMandatoryMessages, currentMandatoryMessage]);
+
+  useEffect(() => {
+    if (!currentNormalMessage && pendingNormalMessages.length > 0) {
+      setCurrentNormalMessage(pendingNormalMessages[0]);
+    }
+  }, [pendingNormalMessages, currentNormalMessage]);
 
   const handleMandatorySubmit = async () => {
     if (!currentMandatoryMessage) return;
+
+    if (!mandatoryComment.trim()) {
+      setMandatoryError('A reply is mandatory. Please provide your input before submitting.');
+      return;
+    }
+
+    setMandatoryError('');
     setSubmittingResponse(true);
     try {
       await messagesApi.respond(currentMandatoryMessage.id, {
-        response: mandatoryResponse,
+        response: mandatoryComment.trim() ? 'COMMENT' : 'ACCEPT',
         comment: mandatoryComment,
       });
 
@@ -98,6 +120,35 @@ export const Layout: React.FC = () => {
     }
   };
 
+  const dismissNormalMessage = async () => {
+    if (!currentNormalMessage) return;
+    try {
+      await messagesApi.respond(currentNormalMessage.id, { response: 'DISMISSED' });
+    } catch (err) {
+      console.error('Failed to dismiss message', err);
+    }
+    const next = pendingNormalMessages.filter(m => m.id !== currentNormalMessage.id);
+    setPendingNormalMessages(next);
+    setCurrentNormalMessage(next.length > 0 ? next[0] : null);
+    setNormalComment('');
+  };
+
+  const handleNormalSubmit = async () => {
+    if (!currentNormalMessage) return;
+    setSubmittingNormalResponse(true);
+    try {
+      await messagesApi.respond(currentNormalMessage.id, {
+        response: normalComment.trim() ? 'COMMENT' : 'ACCEPT',
+        comment: normalComment,
+      });
+      dismissNormalMessage();
+    } catch (err) {
+      console.error('Failed to submit response to normal message', err);
+    } finally {
+      setSubmittingNormalResponse(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-800">
@@ -114,63 +165,29 @@ export const Layout: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50 relative overflow-hidden">
       <GlobalNotificationPopup />
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-h-screen overflow-y-auto">
-        <Navbar />
-        <main className="flex-grow p-6">
+      
+      {/* Mobile Sidebar Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden" 
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar Container */}
+      <div className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <Sidebar onClose={() => setIsMobileMenuOpen(false)} />
+      </div>
+
+      <div className="flex-1 flex flex-col min-h-screen overflow-y-auto w-full max-w-full overflow-x-hidden">
+        <Navbar onMenuToggle={() => setIsMobileMenuOpen(true)} />
+        <main className="flex-grow p-4 md:p-6 w-full max-w-full overflow-x-hidden">
           <Outlet />
         </main>
       </div>
 
-      {/* CARRY FORWARD POPUP PROMPT */}
-      {currentCarryForward && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-400 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-3 text-amber-500">
-              <div className="rounded-lg bg-amber-500/10 p-2 border border-amber-500/20">
-                <HelpCircle size={24} />
-              </div>
-              <h3 className="font-heading text-lg font-semibold text-slate-850">Carry Forward Task?</h3>
-            </div>
-
-            <p className="mt-3 text-sm text-slate-500 leading-relaxed">
-              You left the following task incomplete on{' '}
-              <span className="font-semibold text-slate-700">
-                {new Date(currentCarryForward.date).toLocaleDateString()}
-              </span>
-              :
-            </p>
-
-            <div className="mt-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">
-                {currentCarryForward.project?.name}
-              </p>
-              <p className="text-sm font-medium text-slate-800 mt-1">{currentCarryForward.description}</p>
-            </div>
-
-            <p className="mt-4 text-xs text-slate-400 leading-normal">
-              Would you like to copy this task schedule into your schedule for today?
-            </p>
-
-            <div className="mt-6 flex items-center gap-3">
-              <button
-                onClick={() => handleCarryForwardSubmit(true)}
-                className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 hover:-translate-y-0.5 active:translate-y-0 transition-all cursor-pointer shadow-lg shadow-indigo-600/10"
-              >
-                Yes, Carry Forward
-              </button>
-              <button
-                onClick={() => handleCarryForwardSubmit(false)}
-                className="flex-1 rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-200 hover:text-slate-900 transition-all cursor-pointer"
-              >
-                No, Dismiss
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* MANDATORY MESSAGE BLOCKER POPUP */}
       {currentMandatoryMessage && (
@@ -184,7 +201,7 @@ export const Layout: React.FC = () => {
             </div>
 
             <p className="mt-3 text-sm text-slate-500 leading-relaxed">
-              An administrator has sent you a mandatory response task request. You must submit your acknowledgement and input before continuing to use the dashboard:
+              An administrator has sent you a mandatory response task request. You must submit your reply and input before continuing to use the dashboard:
             </p>
 
             <div className="mt-4 p-4 rounded-xl bg-rose-500/5 border border-rose-200/60 text-slate-800 text-sm whitespace-pre-wrap leading-relaxed font-medium">
@@ -193,39 +210,21 @@ export const Layout: React.FC = () => {
 
             <div className="mt-5 space-y-4">
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">
-                  Select Action
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['ACCEPT', 'REJECT', 'COMMENT'] as const).map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => setMandatoryResponse(opt)}
-                      className={`py-2 rounded-xl text-xs font-bold tracking-wide border transition-all cursor-pointer ${mandatoryResponse === opt
-                          ? opt === 'ACCEPT'
-                            ? 'bg-emerald-600/15 border-emerald-500/30 text-emerald-600'
-                            : opt === 'REJECT'
-                              ? 'bg-rose-600/15 border-rose-500/30 text-rose-600'
-                              : 'bg-indigo-600/15 border-indigo-500/30 text-indigo-600'
-                          : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-                        }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  Remarks / Notes
+                  Remarks / Notes <span className="text-rose-500">*</span>
                 </label>
                 <textarea
                   value={mandatoryComment}
-                  onChange={(e) => setMandatoryComment(e.target.value)}
+                  onChange={(e) => {
+                    setMandatoryComment(e.target.value);
+                    if (e.target.value.trim()) setMandatoryError('');
+                  }}
                   placeholder="Enter detailed feedback or comments here..."
-                  className="w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 min-h-24 resize-none transition-colors"
+                  className={`w-full rounded-xl bg-white border ${mandatoryError ? 'border-rose-500 ring-1 ring-rose-500/20' : 'border-slate-200'} px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 min-h-24 resize-none transition-colors`}
                 />
+                {mandatoryError && (
+                  <p className="text-xs text-rose-500 font-medium mt-1.5">{mandatoryError}</p>
+                )}
               </div>
             </div>
 
@@ -242,7 +241,73 @@ export const Layout: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <MessageSquare size={16} /> Submit Acknowledgement
+                    <MessageSquare size={16} /> Submit Reply
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NORMAL MESSAGE POPUP */}
+      {currentNormalMessage && !currentMandatoryMessage && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-2xl border border-indigo-200 bg-white p-6 shadow-2xl shadow-indigo-500/10 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 text-indigo-600">
+                <div className="rounded-lg bg-indigo-500/10 p-2 border border-indigo-500/20">
+                  <MessageSquare size={24} />
+                </div>
+                <h3 className="font-heading text-lg font-semibold text-slate-800">New Admin Message</h3>
+              </div>
+              <button 
+                onClick={dismissNormalMessage}
+                className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 p-2 rounded-xl transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="mt-5 p-4 rounded-xl bg-indigo-50/50 border border-indigo-100 text-slate-800 text-sm whitespace-pre-wrap leading-relaxed font-medium">
+              {currentNormalMessage.content}
+            </div>
+
+            <div className="mt-5 space-y-4">
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  Your Reply Message
+                </label>
+                <textarea
+                  value={normalComment}
+                  onChange={(e) => setNormalComment(e.target.value)}
+                  placeholder="Type your reply here (optional)..."
+                  className="w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 min-h-24 resize-none transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={dismissNormalMessage}
+                className="rounded-xl px-5 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Close without replying
+              </button>
+              <button
+                disabled={submittingNormalResponse}
+                onClick={handleNormalSubmit}
+                className="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/15"
+              >
+                {submittingNormalResponse ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send size={16} /> Send Reply
                   </>
                 )}
               </button>

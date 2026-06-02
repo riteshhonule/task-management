@@ -7,8 +7,8 @@ export class UploadsService {
     @Inject('STORAGE_SERVICE') private readonly storageService: IStorageService,
   ) {}
 
-  async uploadFile(file: Express.Multer.File) {
-    const url = await this.storageService.saveFile(file);
+  async uploadFile(file: Express.Multer.File, user?: any) {
+    const url = await this.storageService.saveFile(file, user);
     return {
       url,
       filename: file.originalname,

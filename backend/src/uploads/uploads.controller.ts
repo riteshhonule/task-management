@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Res, UseInterceptors, UploadedFile, UseGuards, NotFoundException } from '@nestjs/common';
+import { Controller, Post, Get, Param, Res, UseInterceptors, UploadedFile, UseGuards, NotFoundException, Req } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadsService } from './uploads.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -28,20 +28,23 @@ export class UploadsController {
       },
     },
   })
-  uploadFile(@UploadedFile() file: Express.Multer.File) {
+  uploadFile(@UploadedFile() file: Express.Multer.File, @Req() req: any) {
     if (!file) {
       throw new NotFoundException('No file provided');
     }
-    return this.uploadsService.uploadFile(file);
+    return this.uploadsService.uploadFile(file, req.user);
   }
 
-  @Get(':filename')
+  @Get('*filepath')
   @ApiOperation({ summary: 'Serve uploaded file' })
-  serveFile(@Param('filename') filename: string, @Res() res: Response) {
-    const filePath = path.join(process.cwd(), 'uploads', filename);
-    if (!fs.existsSync(filePath)) {
+  serveFile(@Param('filepath') filepath: string, @Res() res: Response) {
+    if (!filepath) {
+      throw new NotFoundException('File path not provided');
+    }
+    const fullPath = path.join(process.cwd(), 'uploads', filepath);
+    if (!fs.existsSync(fullPath)) {
       throw new NotFoundException('File not found');
     }
-    return res.sendFile(filePath);
+    return res.sendFile(fullPath);
   }
 }

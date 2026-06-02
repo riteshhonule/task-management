@@ -272,8 +272,11 @@ export const AssignTasks: React.FC = () => {
 
         <button
           onClick={() => {
+            const todayStr = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
             setExtraForTaskId(null);
             setEmployeeId('');
+            setStartDate(todayStr);
+            setExpectedEndDate(todayStr);
             setShowCreateModal(true);
           }}
           className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-indigo-600/10 transition-all flex items-center gap-2 cursor-pointer"
@@ -462,7 +465,8 @@ export const AssignTasks: React.FC = () => {
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                     required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                    disabled
+                    className="block w-full rounded-xl bg-slate-100 border border-slate-200 px-3 py-2 text-sm text-slate-500 cursor-not-allowed opacity-80"
                   />
                 </div>
               </div>
@@ -488,6 +492,7 @@ export const AssignTasks: React.FC = () => {
                   <input
                     type="date"
                     value={expectedEndDate}
+                    min={startDate}
                     onChange={(e) => setExpectedEndDate(e.target.value)}
                     required
                     className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
@@ -555,6 +560,15 @@ export const AssignTasks: React.FC = () => {
                               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" 
                             />
                           </div>
+                        </div>
+                        <div className="mt-4">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Admin Instructions (Changes Summary)</label>
+                          <textarea 
+                            value={projectDetails[pid]?.changesSummary || ''} 
+                            onChange={(e) => handleProjectDetailChange(pid, 'changesSummary', e.target.value)} 
+                            placeholder="Detail any changes, instructions, or feedback for the employee here..."
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]" 
+                          />
                         </div>
                       </div>
                     );
@@ -696,11 +710,20 @@ export const AssignTasks: React.FC = () => {
                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By</label>
                           <input
                             type="text"
-                            value={rev.changesGivenBy}
+                            value={rev.changesGivenBy || ''}
                             onChange={(e) => handleEditReviewChange(p.id, 'changesGivenBy', e.target.value)}
                             className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800"
                           />
                         </div>
+                      </div>
+                      <div className="mt-4">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Admin Instructions (Changes Summary)</label>
+                        <textarea
+                          value={rev.changesSummary || ''}
+                          onChange={(e) => handleEditReviewChange(p.id, 'changesSummary', e.target.value)}
+                          placeholder="Detail any changes, instructions, or feedback for the employee here..."
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 min-h-[60px]"
+                        />
                       </div>
                     </div>
                   );

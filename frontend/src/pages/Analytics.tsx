@@ -149,28 +149,28 @@ export const Analytics: React.FC = () => {
             <Users size={16} className="text-indigo-600" /> Employee Performance Rankings
           </h3>
           
-          <div className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden text-xs">
+          <div className="border border-slate-200 bg-slate-50 text-xs">
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-100/80 text-[10px] font-bold text-slate-550 uppercase tracking-widest">
-                  <th className="px-4 py-3.5">Employee</th>
-                  <th className="px-4 py-3.5 text-center">Tasks Assigned</th>
-                  <th className="px-4 py-3.5 text-right">Completion Rate</th>
+                  <th className="px-4 py-4 text-center align-middle">Employee</th>
+                  <th className="px-4 py-4 text-center align-middle">Tasks Assigned</th>
+                  <th className="px-4 py-4 text-center align-middle">Completion Rate</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {data.employeePerformance.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="px-4 py-6 text-center text-slate-400">
+                    <td colSpan={3} className="px-2 py-1.5 text-center text-slate-400 align-middle">
                       No employee stats loaded.
                     </td>
                   </tr>
                 ) : (
                   data.employeePerformance.map((emp: any) => (
                     <tr key={emp.name} className="hover:bg-slate-100/50">
-                      <td className="px-4 py-3.5 font-bold text-slate-800">{emp.name}</td>
-                      <td className="px-4 py-3.5 text-center font-medium">{emp.totalTasks}</td>
-                      <td className="px-4 py-3.5 text-right font-bold text-indigo-600">
+                      <td className="px-2 py-1.5 font-bold text-slate-800 text-center align-middle">{emp.name}</td>
+                      <td className="px-2 py-1.5 text-center font-medium align-middle">{emp.totalTasks}</td>
+                      <td className="px-2 py-1.5 font-bold text-indigo-600 text-center align-middle">
                         {emp.completionRate}%
                       </td>
                     </tr>

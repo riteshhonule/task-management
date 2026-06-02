@@ -2,13 +2,24 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { tasksApi, projectsApi, uploadsApi } from '../services/api';
 import {
   Plus, AlertTriangle, Search, Calendar,
-  Edit, Loader2, Save, X, CheckSquare
+  Edit, Loader2, Save, X, CheckSquare, AlertCircle
 } from 'lucide-react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { io } from 'socket.io-client';
+import { useAuth } from '../context/AuthContext';
 
 type TabType = 'TODAY' | 'YESTERDAY' | 'ALL' | 'COMPLETED' | 'IN_PROGRESS' | 'DELAYED' | 'PENDING';
 
+const getLocalYYYYMMDD = (d?: Date | string | number | null) => {
+  if (!d) d = new Date();
+  const dateObj = new Date(d);
+  if (isNaN(dateObj.getTime())) return '';
+  const tzoffset = dateObj.getTimezoneOffset() * 60000;
+  return new Date(dateObj.getTime() - tzoffset).toISOString().split('T')[0];
+};
+
 export const EmployeeDashboard: React.FC = () => {
+  const { user, token } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('TODAY');
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
@@ -26,7 +37,7 @@ export const EmployeeDashboard: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Create Task Form
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(() => getLocalYYYYMMDD());
   const [startTime, setStartTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [expectedEndDateType, setExpectedEndDateType] = useState<'today'|'tomorrow'|'custom'>('today');
   const [expectedEndDate, setExpectedEndDate] = useState('');
@@ -51,6 +62,12 @@ export const EmployeeDashboard: React.FC = () => {
     screenshotUrl?: string,
     uploadFile?: File | null
   }>>({});
+  
+  const [rejectingTask, setRejectingTask] = useState<any>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+
+  const [taskUpdatedBanner, setTaskUpdatedBanner] = useState(false);
+  const [hasPromptedEveningReview, setHasPromptedEveningReview] = useState(false);
 
   const fetchDashboardData = async () => {
     try {
@@ -72,6 +89,28 @@ export const EmployeeDashboard: React.FC = () => {
     fetchDashboardData();
   }, []);
 
+  useEffect(() => {
+    if (!user || !token) return;
+    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000', {
+      transports: ['websocket'],
+    });
+
+    socket.on('connect', () => {
+      socket.emit('register', user.id);
+    });
+
+    socket.on('notification', (data: any) => {
+      if (data.type === 'TASK_UPDATED' || data.type === 'TASK_ASSIGNED') {
+        fetchDashboardData();
+        setTaskUpdatedBanner(true);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user, token]);
+
   const today = new Date().toDateString();
   const yesterday = new Date(Date.now() - 86400000).toDateString();
 
@@ -82,20 +121,26 @@ export const EmployeeDashboard: React.FC = () => {
   // Check Evening Review
   useEffect(() => {
     const currentHour = new Date().getHours();
-    if (currentHour >= 18 && todayTask) {
+    if (currentHour >= 18 && todayTask && !hasPromptedEveningReview) {
       const hasPendingReviews = todayTask.projects?.some((p: any) => 
         p.status === 'PENDING' || (!p.completedWorkDescription && p.status !== 'DELAYED' && p.status !== 'BLOCKED')
       );
-      if (hasPendingReviews && !showEveningReview) {
-        handleEditInit(todayTask);
+      if (hasPendingReviews && !showEveningReview && !showCreateModal) {
+        setHasPromptedEveningReview(true);
+        // Removed auto handleEditInit(todayTask) to prevent forced Edit Task modal
       }
     }
-  }, [todayTask, tasks]);
+  }, [todayTask, tasks, showCreateModal, showEveningReview, hasPromptedEveningReview]);
 
   const handleCreateTaskInit = () => {
     if (todayTask) {
       setShowDuplicatePopup(true);
     } else {
+      setEditTask(null);
+      setStartDate(getLocalYYYYMMDD());
+      setStartTime(new Date().toTimeString().slice(0, 5));
+      setExpectedEndDateType('today');
+      setExpectedEndDate('');
       setSelectedProjects([]);
       setProjectDetails({});
       setShowCreateModal(true);
@@ -136,7 +181,7 @@ export const EmployeeDashboard: React.FC = () => {
     } else if (expectedEndDateType === 'tomorrow') {
       const tomorrow = new Date(startDate);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      finalExpectedEndDate = tomorrow.toISOString().split('T')[0];
+      finalExpectedEndDate = getLocalYYYYMMDD(tomorrow);
     }
 
     if (selectedProjects.length === 0 || !startDate || !startTime || !finalExpectedEndDate) return;
@@ -151,6 +196,40 @@ export const EmployeeDashboard: React.FC = () => {
 
     if (new Date(finalExpectedEndDate) < new Date(startDate)) {
       alert("Expected End Date cannot be before Start Date.");
+      return;
+    }
+
+    if (editTask) {
+      const reviews: Record<number, any> = {};
+      selectedProjects.forEach(pid => {
+        const existing = editTask.projects?.find((p: any) => p.projectId === pid);
+        if (existing) {
+          reviews[pid] = {
+            id: existing.id,
+            status: existing.status || 'PENDING',
+            completedWorkDescription: existing.completedWorkDescription || '',
+            delayReason: existing.delayReason || '',
+            blockedReason: existing.blockedReason || '',
+            completionPercentage: existing.completionPercentage || 0,
+            screenshotUrl: existing.updates ? existing.updates.find((u: any) => u.screenshotUrl)?.screenshotUrl : undefined,
+            uploadFile: null,
+          };
+        } else {
+          reviews[pid] = {
+            status: 'PENDING',
+            completedWorkDescription: '',
+            delayReason: '',
+            blockedReason: '',
+            completionPercentage: 0,
+            uploadFile: null,
+          };
+        }
+      });
+      setReviewProjects(reviews);
+      setEditStartTime(startTime);
+      setEditExpectedEndDate(finalExpectedEndDate);
+      setShowCreateModal(false);
+      setShowEveningReview(true);
       return;
     }
 
@@ -188,35 +267,37 @@ export const EmployeeDashboard: React.FC = () => {
 
   const handleEditInit = (task: any) => {
     setEditTask(task);
-    setEditStartTime(task.startTime || '');
+    setStartDate(task.startDate ? getLocalYYYYMMDD(task.startDate) : getLocalYYYYMMDD(new Date()));
+    setStartTime(task.startTime || '');
     
     try {
       const expDate = task.expectedEndDate ? new Date(task.expectedEndDate) : new Date();
       if (isNaN(expDate.getTime())) throw new Error("Invalid date");
-      const tzoffset = expDate.getTimezoneOffset() * 60000;
-      const localISODate = new Date(expDate.getTime() - tzoffset).toISOString().split('T')[0];
-      setEditExpectedEndDate(localISODate);
+      const localISODate = getLocalYYYYMMDD(expDate);
+      setExpectedEndDate(localISODate);
+      setExpectedEndDateType('custom');
     } catch (e) {
-      setEditExpectedEndDate(new Date().toISOString().split('T')[0]);
+      setExpectedEndDate(getLocalYYYYMMDD(new Date()));
+      setExpectedEndDateType('custom');
     }
 
-    const reviews: Record<number, any> = {};
+    const selProj: number[] = [];
+    const projDetails: Record<number, any> = {};
     if (task.projects) {
       task.projects.forEach((p: any) => {
-        reviews[p.id] = {
-          id: p.id,
-          status: p.status || 'PENDING',
-          completedWorkDescription: p.completedWorkDescription || '',
-          delayReason: p.delayReason || '',
-          blockedReason: p.blockedReason || '',
-          completionPercentage: p.completionPercentage || 0,
-          screenshotUrl: p.screenshotUrl || undefined,
-          uploadFile: null,
+        selProj.push(p.projectId);
+        projDetails[p.projectId] = {
+          taskDescription: p.taskDescription || '',
+          changesGivenBy: p.changesGivenBy || '',
+          changesSummary: p.changesSummary || ''
         };
       });
     }
-    setReviewProjects(reviews);
-    setShowEveningReview(true);
+    setSelectedProjects(selProj);
+    setProjectDetails(projDetails);
+    
+    setShowEveningReview(false);
+    setShowCreateModal(true);
   };
 
   const handleReviewChange = (taskProjectId: number, field: string, value: any) => {
@@ -234,6 +315,7 @@ export const EmployeeDashboard: React.FC = () => {
       const projectsPayload = [];
       
       for (const [idStr, review] of Object.entries(reviewProjects)) {
+        const pid = parseInt(idStr);
         let finalScreenshotUrl = review.screenshotUrl;
         if (review.uploadFile) {
           const uploadRes = await uploadsApi.upload(review.uploadFile);
@@ -241,7 +323,11 @@ export const EmployeeDashboard: React.FC = () => {
         }
 
         projectsPayload.push({
-          id: parseInt(idStr),
+          id: review.id,
+          projectId: pid,
+          taskDescription: projectDetails[pid]?.taskDescription,
+          changesGivenBy: projectDetails[pid]?.changesGivenBy || undefined,
+          changesSummary: projectDetails[pid]?.changesSummary || undefined,
           status: review.status,
           completedWorkDescription: review.status === 'COMPLETED' ? review.completedWorkDescription : undefined,
           delayReason: review.status === 'DELAYED' ? review.delayReason : undefined,
@@ -252,12 +338,14 @@ export const EmployeeDashboard: React.FC = () => {
       }
 
       await tasksApi.update(editTask.id, {
+        startDate: new Date(startDate).toISOString(),
         startTime: editStartTime,
         expectedEndDate: new Date(editExpectedEndDate).toISOString(),
         projects: projectsPayload,
       });
 
       setShowEveningReview(false);
+      setEditTask(null);
       await fetchDashboardData();
     } catch (err) {
       console.error('Failed to submit review:', err);
@@ -295,13 +383,41 @@ export const EmployeeDashboard: React.FC = () => {
             completedWorkDescription: p.completedWorkDescription,
             completionPercentage: p.completionPercentage,
             notes: p.notes,
-            screenshotUrl: p.screenshotUrl, // Assuming screenshot might be on project later, or task
+            acceptanceStatus: p.acceptanceStatus,
+            rejectionReason: p.rejectionReason,
+            screenshotUrl: p.updates ? p.updates.find((u: any) => u.screenshotUrl)?.screenshotUrl : null,
           });
         }
       }
     }
     return flat;
   }, [tasks]);
+
+  const handleAcceptTask = async (taskId: number) => {
+    try {
+      await tasksApi.acceptPending(taskId);
+      fetchDashboardData();
+    } catch (error) {
+      console.error(error);
+      alert('Failed to accept task.');
+    }
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!rejectionReason.trim()) {
+      alert("Please provide a reason for rejection.");
+      return;
+    }
+    try {
+      await tasksApi.rejectPending(rejectingTask.taskId, rejectionReason);
+      setRejectingTask(null);
+      setRejectionReason('');
+      fetchDashboardData();
+    } catch (error) {
+      console.error(error);
+      alert('Failed to reject task.');
+    }
+  };
 
   const filteredTasks = useMemo(() => {
     let filtered = flattenedTasks;
@@ -336,17 +452,34 @@ export const EmployeeDashboard: React.FC = () => {
     <ErrorBoundary>
       <div className="space-y-6 animate-in fade-in duration-200">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-heading font-extrabold text-slate-800">My Tasks</h2>
-          <p className="text-xs text-slate-550">Manage your daily work schedules and reviews.</p>
+          <div>
+            <h2 className="text-2xl font-heading font-extrabold text-slate-800">My Tasks</h2>
+            <p className="text-xs text-slate-550">Manage your daily work schedules and reviews.</p>
+          </div>
+          <button
+            onClick={handleCreateTaskInit}
+            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2"
+          >
+            <Plus size={16} /> Create Today's Task
+          </button>
         </div>
-        <button
-          onClick={handleCreateTaskInit}
-          className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2"
-        >
-          <Plus size={16} /> Create Today's Task
-        </button>
-      </div>
+
+        {taskUpdatedBanner && (
+          <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl flex items-start justify-between shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="flex gap-3">
+              <div className="bg-indigo-100 text-indigo-600 p-2 rounded-lg">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <h4 className="font-bold text-indigo-900">Admin Updated Your Tasks</h4>
+                <p className="text-sm text-indigo-800 mt-0.5">An admin has allocated extra tasks or modified your current task list. The updates have been loaded automatically.</p>
+              </div>
+            </div>
+            <button onClick={() => setTaskUpdatedBanner(false)} className="text-indigo-400 hover:text-indigo-700 bg-indigo-100 hover:bg-indigo-200 p-1.5 rounded-lg transition-colors cursor-pointer">
+              <X size={16} />
+            </button>
+          </div>
+        )}
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-4">
         {tabs.map((tab) => (
@@ -402,43 +535,92 @@ export const EmployeeDashboard: React.FC = () => {
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {task.projects?.map((p: any) => (
-                          <div key={p.id} className="border border-slate-200 rounded-2xl p-5 shadow-sm relative overflow-hidden bg-white">
-                            <div className={`absolute top-0 left-0 w-1 h-full ${p.status === 'COMPLETED' ? 'bg-emerald-500' : p.status === 'IN_PROGRESS' ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
+                        {task.projects?.map((p: any) => {
+                          const isNewByAdmin = p.createdAt && task.createdAt && (new Date(p.createdAt).getTime() - new Date(task.createdAt).getTime() > 60000);
+                          const isEditedByAdmin = p.changesSummary || p.changesGivenBy || p.adminEditedDescription;
+                          
+                          return (
+                          <div key={p.id} className={`border rounded-2xl p-5 shadow-sm relative overflow-hidden ${isNewByAdmin ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 bg-white'}`}>
+                            <div className={`absolute top-0 left-0 w-1 h-full ${isNewByAdmin ? 'bg-amber-400' : p.status === 'COMPLETED' ? 'bg-emerald-500' : p.status === 'IN_PROGRESS' ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
                             <div className="flex justify-between items-start mb-4">
-                              <span className="inline-block px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-extrabold uppercase rounded-full">
-                                {p.project?.name}
-                              </span>
-                              <span className={`px-2 py-1 border rounded-lg text-[10px] font-bold ${
-                                p.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                p.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                                'bg-slate-50 text-slate-600 border-slate-200'
-                              }`}>
-                                {p.status}
-                              </span>
+                              <div className="flex flex-col items-start gap-2">
+                                <span className={`inline-block px-3 py-1 text-[10px] font-extrabold uppercase rounded-full ${isNewByAdmin ? 'bg-amber-200 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+                                  {p.project?.name}
+                                </span>
+                              </div>
+                              <div className="flex flex-col items-end gap-1.5">
+                                {(isNewByAdmin || isEditedByAdmin) && (
+                                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded uppercase ${isNewByAdmin ? 'text-amber-700 bg-amber-100' : 'text-indigo-600 bg-indigo-100'}`}>
+                                    Admin Update
+                                  </span>
+                                )}
+                                  {p.acceptanceStatus === 'PENDING' ? (
+                                    <div className="flex gap-1.5 mt-1">
+                                      <button onClick={() => handleAcceptTask(task.id)} className="px-2 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded text-[9px] uppercase font-extrabold flex-1">Accept</button>
+                                      <button onClick={() => setRejectingTask({ ...p, taskId: task.id })} className="px-2 py-1 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded text-[9px] uppercase font-extrabold flex-1">Reject</button>
+                                    </div>
+                                  ) : p.acceptanceStatus === 'REJECTED' ? (
+                                    <div className="flex flex-col items-end gap-1">
+                                      <span className="px-2 py-1 border rounded-lg text-[10px] font-bold bg-rose-50 text-rose-700 border-rose-200">
+                                        REJECTED
+                                      </span>
+                                      {p.rejectionReason && (
+                                        <span className="text-[9px] text-rose-600 font-bold bg-white px-1.5 py-0.5 rounded border border-rose-100 max-w-[120px] truncate" title={p.rejectionReason}>
+                                          {p.rejectionReason}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className={`px-2 py-1 border rounded-lg text-[10px] font-bold ${
+                                      p.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                      p.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                      'bg-slate-50 text-slate-600 border-slate-200'
+                                    }`}>
+                                      {p.status}
+                                    </span>
+                                  )}
+                              </div>
                             </div>
                             
-                            <h4 className="font-semibold text-slate-800 text-sm mb-3">{p.taskDescription}</h4>
+                            <h4 className="font-semibold text-slate-800 text-sm mb-3">
+                              {p.taskDescription}
+                              {p.changesSummary && <span className="text-indigo-600 font-bold ml-1.5">{p.changesSummary}</span>}
+                            </h4>
                             
                             {p.changesGivenBy && (
-                              <div className="text-xs text-slate-600 mb-2">
+                              <div className="text-[10px] text-slate-500 mb-2 font-medium">
                                 <span className="font-bold text-slate-400">Changes By:</span> {p.changesGivenBy}
-                              </div>
-                            )}
-                            
-                            {p.changesSummary && (
-                              <div className="text-xs text-slate-600 mb-3 line-clamp-2">
-                                <span className="font-bold text-slate-400">Summary:</span> {p.changesSummary}
                               </div>
                             )}
 
                             {p.completedWorkDescription && (
                               <div className="mt-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-xs">
-                                <span className="font-bold block mb-1">Completed Work:</span> {p.completedWorkDescription}
+                                <span className="font-bold block mb-1">Completed Work Description:</span> {p.completedWorkDescription}
+                              </div>
+                            )}
+
+                            {p.updates?.find((u: any) => u.screenshotUrl)?.screenshotUrl && (
+                              <div className="mt-2 text-xs">
+                                <a href={`http://localhost:3000/${p.updates.find((u: any) => u.screenshotUrl).screenshotUrl}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-1">
+                                  View Work Done Proof
+                                </a>
+                              </div>
+                            )}
+
+                            {p.delayReason && (
+                              <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-lg text-rose-800 text-xs">
+                                <span className="font-bold block mb-1">Delay Reason:</span> {p.delayReason}
+                              </div>
+                            )}
+
+                            {p.blockedReason && (
+                              <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-lg text-rose-800 text-xs">
+                                <span className="font-bold block mb-1">Blocked Reason:</span> {p.blockedReason}
                               </div>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
@@ -478,25 +660,86 @@ export const EmployeeDashboard: React.FC = () => {
                   )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {yesterdayTask.projects?.map((p: any) => (
-                      <div key={p.id} className="border border-slate-200 rounded-2xl p-5 shadow-sm bg-white">
+                    {yesterdayTask.projects?.map((p: any) => {
+                      const isNewByAdmin = p.createdAt && yesterdayTask.createdAt && (new Date(p.createdAt).getTime() - new Date(yesterdayTask.createdAt).getTime() > 60000);
+                      const isEditedByAdmin = p.changesSummary || p.changesGivenBy || p.adminEditedDescription;
+                      
+                      return (
+                      <div key={p.id} className={`border rounded-2xl p-5 shadow-sm relative overflow-hidden ${isNewByAdmin ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 bg-white'}`}>
+                        <div className={`absolute top-0 left-0 w-1 h-full ${isNewByAdmin ? 'bg-amber-400' : p.status === 'COMPLETED' ? 'bg-emerald-500' : p.status === 'IN_PROGRESS' ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
                         <div className="flex justify-between items-start mb-4">
-                          <span className="inline-block px-3 py-1 bg-slate-100 text-slate-700 text-[10px] font-extrabold uppercase rounded-full">
-                            {p.project?.name}
-                          </span>
-                          <span className="px-2 py-1 border rounded-lg text-[10px] font-bold bg-slate-50 text-slate-600 border-slate-200">
-                            {p.status}
-                          </span>
+                          <div className="flex flex-col items-start gap-2">
+                            <span className={`inline-block px-3 py-1 text-[10px] font-extrabold uppercase rounded-full ${isNewByAdmin ? 'bg-amber-200 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+                              {p.project?.name}
+                            </span>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5">
+                            {(isNewByAdmin || isEditedByAdmin) && (
+                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded uppercase ${isNewByAdmin ? 'text-amber-700 bg-amber-100' : 'text-indigo-600 bg-indigo-100'}`}>
+                                Admin Update
+                              </span>
+                            )}
+                            {p.acceptanceStatus === 'PENDING' ? (
+                              <div className="flex gap-1.5 mt-1">
+                                <button onClick={() => handleAcceptTask(yesterdayTask.id)} className="px-2 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded text-[9px] uppercase font-extrabold flex-1">Accept</button>
+                                <button onClick={() => setRejectingTask({ ...p, taskId: yesterdayTask.id })} className="px-2 py-1 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded text-[9px] uppercase font-extrabold flex-1">Reject</button>
+                              </div>
+                            ) : p.acceptanceStatus === 'REJECTED' ? (
+                              <div className="flex flex-col items-end gap-1">
+                                <span className="px-2 py-1 border rounded-lg text-[10px] font-bold bg-rose-50 text-rose-700 border-rose-200">
+                                  REJECTED
+                                </span>
+                                {p.rejectionReason && (
+                                  <span className="text-[9px] text-rose-600 font-bold bg-white px-1.5 py-0.5 rounded border border-rose-100 max-w-[120px] truncate" title={p.rejectionReason}>
+                                    {p.rejectionReason}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className={`px-2 py-1 border rounded-lg text-[10px] font-bold ${
+                                p.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                p.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                'bg-slate-50 text-slate-600 border-slate-200'
+                              }`}>
+                                {p.status}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <h4 className="font-semibold text-slate-800 text-sm mb-3">{p.taskDescription}</h4>
-                        <div className="text-xs text-slate-500 mb-2">Date: {new Date(yesterdayTask.startDate).toLocaleDateString()}</div>
+                        
+                        <h4 className="font-semibold text-slate-800 text-sm mb-3">
+                          {p.taskDescription}
+                          {p.changesSummary && <span className="text-indigo-600 font-bold ml-1.5">{p.changesSummary}</span>}
+                        </h4>
+                        
+                        {p.changesGivenBy && (
+                          <div className="text-[10px] text-slate-500 mb-2 font-medium">
+                            <span className="font-bold text-slate-400">Changes By:</span> {p.changesGivenBy}
+                          </div>
+                        )}
+
                         {p.delayReason && (
                           <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-lg text-rose-800 text-xs">
-                            <span className="font-bold">Delay Reason:</span> {p.delayReason}
+                            <span className="font-bold block mb-1">Delay Reason:</span> {p.delayReason}
+                          </div>
+                        )}
+
+                        {p.completedWorkDescription && (
+                          <div className="mt-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-xs">
+                            <span className="font-bold block mb-1">Completed Work Description:</span> {p.completedWorkDescription}
+                          </div>
+                        )}
+
+                        {p.updates?.find((u: any) => u.screenshotUrl)?.screenshotUrl && (
+                          <div className="mt-2 text-xs">
+                            <a href={`http://localhost:3000/${p.updates.find((u: any) => u.screenshotUrl).screenshotUrl}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-1">
+                              View Work Done Proof
+                            </a>
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -535,17 +778,18 @@ export const EmployeeDashboard: React.FC = () => {
                 <table className="w-full text-left border-collapse">
                   <thead className="sticky top-0 z-20 bg-slate-200 outline outline-1 outline-slate-400 shadow-sm">
                     <tr className="bg-slate-200 divide-x divide-slate-400">
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Date</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Project</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Task Description</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Completion</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Screenshot</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Start Time</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Expected End</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider">Delay (Y/N)</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider w-[150px]">Delay Reason</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Extra Note</th>
-                      <th className="px-5 py-4 text-xs font-extrabold text-slate-800 uppercase tracking-wider text-right">Status</th>
+                      <th className="sticky left-0 z-30 bg-slate-200 w-[100px] min-w-[100px] max-w-[100px] px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider outline outline-1 outline-slate-400 shadow-sm">Date</th>
+                      <th className="sticky left-[100px] z-30 bg-slate-200 w-[150px] min-w-[150px] max-w-[150px] px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider outline outline-1 outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Project</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Task Description</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Completion</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Work Done Proof</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Start Time</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Expected End</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Delay (Y/N)</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[150px]">Delay Reason</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Extra Note</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Reject Reason</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider text-right">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-400">
@@ -556,30 +800,31 @@ export const EmployeeDashboard: React.FC = () => {
                     ) : (
                       filteredTasks.map((t, idx) => (
                         <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
-                          <td className="px-5 py-5 text-sm text-slate-500 font-medium whitespace-nowrap">{new Date(t.startDate).toLocaleDateString()}</td>
-                          <td className="px-5 py-5 text-sm text-indigo-700 font-bold whitespace-nowrap">{t.project?.name}</td>
-                          <td className="px-5 py-5 text-sm text-slate-700 leading-relaxed whitespace-normal min-w-[200px]">
+                          <td className="sticky left-0 z-10 bg-white w-[100px] min-w-[100px] max-w-[100px] px-3 py-2.5 text-sm text-slate-500 font-medium whitespace-nowrap outline outline-1 outline-slate-400">{new Date(t.startDate).toLocaleDateString()}</td>
+                          <td className="sticky left-[100px] z-10 bg-white w-[150px] min-w-[150px] max-w-[150px] px-3 py-2.5 text-sm text-indigo-700 font-bold whitespace-nowrap outline outline-1 outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">{t.project?.name}</td>
+                          <td className="px-3 py-2.5 text-sm text-slate-700 leading-relaxed whitespace-normal min-w-[200px]">
                             {t.taskDescription}
+                            {t.changesSummary && <span className="text-indigo-600 font-bold ml-1.5 block mt-1">{t.changesSummary}</span>}
                           </td>
-                          <td className="px-5 py-5 text-sm text-slate-700 font-bold whitespace-nowrap">{t.completionPercentage || 0}%</td>
-                          <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">
+                          <td className="px-3 py-2.5 text-sm text-slate-700 font-bold whitespace-nowrap">{t.completionPercentage || 0}%</td>
+                          <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
                             {t.screenshotUrl ? (
                               <a href={`http://localhost:3000/${t.screenshotUrl}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-semibold bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 inline-block">
                                 View
                               </a>
                             ) : <span className="text-slate-300">-</span>}
                           </td>
-                          <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">{t.startTime}</td>
-                          <td className="px-5 py-5 text-xs text-slate-700 whitespace-nowrap">
+                          <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.startTime}</td>
+                          <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
                             {new Date(t.expectedEndDate).toLocaleDateString()}
                           </td>
-                          <td className="px-5 py-5 text-xs font-bold text-slate-700 whitespace-nowrap">
+                          <td className="px-3 py-2.5 text-xs font-bold text-slate-700 whitespace-nowrap">
                             {t.status === 'DELAYED' ? <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100">Yes</span> : <span className="text-slate-400">No</span>}
                           </td>
-                          <td className="px-5 py-5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
+                          <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
                             {t.delayReason || <span className="text-slate-300">-</span>}
                           </td>
-                          <td className="px-5 py-5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[200px]">
+                          <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[200px]">
                             {t.completedWorkDescription ? (
                               <div><strong className="text-emerald-700 block mb-1">Work:</strong> {t.completedWorkDescription}</div>
                             ) : t.blockedReason ? (
@@ -588,16 +833,30 @@ export const EmployeeDashboard: React.FC = () => {
                               <div><strong className="text-slate-600 block mb-1">Note:</strong> {t.notes}</div>
                             ) : <span className="text-slate-300">-</span>}
                           </td>
-                          <td className="px-5 py-5 text-xs font-bold text-right whitespace-nowrap">
-                            <span className={`px-3 py-1.5 rounded-lg border inline-block ${
-                              t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              t.status === 'DELAYED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                              t.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                              t.status === 'BLOCKED' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                              'bg-amber-50 text-amber-700 border-amber-200'
-                            }`}>
-                              {t.status.replace('_', ' ')}
-                            </span>
+                          <td className="px-3 py-2.5 text-xs text-rose-600 whitespace-normal leading-relaxed font-medium min-w-[200px]">
+                            {t.acceptanceStatus === 'REJECTED' ? t.rejectionReason : <span className="text-slate-300">-</span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs font-bold text-right whitespace-nowrap">
+                            {t.acceptanceStatus === 'PENDING' ? (
+                              <div className="flex flex-col gap-1.5 items-end">
+                                <button onClick={() => handleAcceptTask(t.taskId)} className="px-3 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg text-[10px] uppercase font-extrabold w-full text-center">Accept</button>
+                                <button onClick={() => setRejectingTask(t)} className="px-3 py-1 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-lg text-[10px] uppercase font-extrabold w-full text-center">Reject</button>
+                              </div>
+                            ) : t.acceptanceStatus === 'REJECTED' ? (
+                              <span className="px-3 py-1.5 rounded-lg border inline-block bg-rose-50 text-rose-700 border-rose-200">
+                                REJECTED
+                              </span>
+                            ) : (
+                              <span className={`px-3 py-1.5 rounded-lg border inline-block ${
+                                t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                t.status === 'DELAYED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                t.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                t.status === 'BLOCKED' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                                'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}>
+                                {t.status.replace('_', ' ')}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -645,8 +904,8 @@ export const EmployeeDashboard: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
           <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pb-4 border-b border-slate-100">
-              <h3 className="font-heading text-xl font-bold text-slate-800">Create Today's Task</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
+              <h3 className="font-heading text-xl font-bold text-slate-800">{editTask ? 'Edit Task' : "Create Today's Task"}</h3>
+              <button onClick={() => { setShowCreateModal(false); setEditTask(null); }} className="text-slate-400 hover:text-slate-600">
                 <X size={20} />
               </button>
             </div>
@@ -659,10 +918,9 @@ export const EmployeeDashboard: React.FC = () => {
                   <input 
                     type="date" 
                     value={startDate} 
-                    max={new Date().toISOString().split('T')[0]}
+                    disabled
                     onChange={(e) => setStartDate(e.target.value)} 
-                    required 
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" 
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors text-sm font-medium bg-slate-100 text-slate-500 cursor-not-allowed"
                   />
                 </div>
                 <div>
@@ -764,10 +1022,10 @@ export const EmployeeDashboard: React.FC = () => {
                 </div>
               )}
 
-              <div className="pt-6 sticky bottom-0 bg-white border-t border-slate-100 flex justify-end gap-3 mt-8 -mx-6 px-6">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Cancel</button>
+              <div className="pt-6 pb-6 sticky bottom-0 bg-white border-t border-slate-100 flex justify-end gap-3 mt-8 -mx-6 px-6">
+                <button type="button" onClick={() => { setShowCreateModal(false); setEditTask(null); }} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200">Cancel</button>
                 <button type="submit" disabled={isSubmitting || selectedProjects.length === 0} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 shadow-md disabled:opacity-50 flex items-center gap-2">
-                  {isSubmitting && <Loader2 size={16} className="animate-spin" />} Submit Task
+                  {isSubmitting && <Loader2 size={16} className="animate-spin" />} {editTask ? 'Next' : 'Submit Task'}
                 </button>
               </div>
             </form>
@@ -785,7 +1043,7 @@ export const EmployeeDashboard: React.FC = () => {
                   <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
                   Today's Work Review
                 </h3>
-                <button onClick={() => setShowEveningReview(false)} className="text-slate-400 hover:text-white">
+                <button onClick={() => { setShowEveningReview(false); setEditTask(null); }} className="text-slate-400 hover:text-white">
                   <X size={20} />
                 </button>
               </div>
@@ -793,35 +1051,23 @@ export const EmployeeDashboard: React.FC = () => {
               <div className="flex-1 overflow-y-auto p-6">
                 <form id="review-form" onSubmit={handleReviewSubmit} className="space-y-8">
                   
-                  {/* Task Metadata */}
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex gap-4 items-center">
-                    <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time</label>
-                      <input type="time" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} required className="w-full max-w-[200px] rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white" />
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expected End Date</label>
-                      <input type="date" value={editExpectedEndDate} onChange={(e) => setEditExpectedEndDate(e.target.value)} required className="w-full max-w-[200px] rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white" />
-                    </div>
-                  </div>
-
                   {/* Per Project Review */}
                   <div className="space-y-6">
-                    <h4 className="text-md font-bold text-slate-800 border-b border-slate-200 pb-2">Project Reviews</h4>
-                    {editTask.projects?.map((p: any) => {
-                      const reviewState = reviewProjects[p.id];
-                      if (!reviewState) return null;
+                    {selectedProjects.map((pid) => {
+                      const reviewState = reviewProjects[pid];
+                      const project = projects.find(pr => pr.id === pid);
+                      if (!reviewState || !project) return null;
 
                       return (
-                        <div key={p.id} className="border border-slate-200 rounded-2xl p-5 shadow-sm bg-white relative overflow-hidden">
+                        <div key={pid} className="border border-slate-200 rounded-2xl p-5 shadow-sm bg-white relative overflow-hidden">
                           <div className={`absolute top-0 left-0 w-1 h-full ${reviewState.status === 'COMPLETED' ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
                           
                           <div className="flex justify-between items-start mb-4 border-b border-slate-100 pb-3">
                             <div>
                               <span className="inline-block px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-extrabold uppercase rounded-lg mb-2">
-                                {p.project?.name}
+                                {project.name}
                               </span>
-                              <h5 className="font-bold text-slate-800 text-sm">{p.taskDescription}</h5>
+                              <h5 className="font-bold text-slate-800 text-sm">{projectDetails[pid]?.taskDescription}</h5>
                             </div>
                           </div>
 
@@ -829,14 +1075,14 @@ export const EmployeeDashboard: React.FC = () => {
                             <div>
                               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Status</label>
                               <div className="flex flex-wrap gap-2">
-                                {['COMPLETED', 'IN_PROGRESS', 'DELAYED', 'BLOCKED'].map((st) => (
+                                {['PENDING', 'COMPLETED', 'IN_PROGRESS', 'DELAYED', 'BLOCKED'].map((st) => (
                                   <label key={st} className={`flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-all ${reviewState.status === st ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
                                     <input 
                                       type="radio" 
-                                      name={`status-${p.id}`} 
+                                      name={`status-${pid}`} 
                                       value={st} 
                                       checked={reviewState.status === st} 
-                                      onChange={(e) => handleReviewChange(p.id, 'status', e.target.value)} 
+                                      onChange={(e) => handleReviewChange(pid, 'status', e.target.value)} 
                                       className="w-3.5 h-3.5 text-indigo-600 border-slate-300 focus:ring-indigo-500"
                                       required
                                     />
@@ -851,7 +1097,7 @@ export const EmployeeDashboard: React.FC = () => {
                                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">Completed Work Description</label>
                                 <textarea 
                                   value={reviewState.completedWorkDescription} 
-                                  onChange={(e) => handleReviewChange(p.id, 'completedWorkDescription', e.target.value)} 
+                                  onChange={(e) => handleReviewChange(pid, 'completedWorkDescription', e.target.value)} 
                                   required 
                                   placeholder="What was completed?"
                                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]" 
@@ -864,7 +1110,7 @@ export const EmployeeDashboard: React.FC = () => {
                                 <label className="block text-xs font-bold text-rose-600 uppercase tracking-wider mb-1.5">Delay Reason</label>
                                 <textarea 
                                   value={reviewState.delayReason} 
-                                  onChange={(e) => handleReviewChange(p.id, 'delayReason', e.target.value)} 
+                                  onChange={(e) => handleReviewChange(pid, 'delayReason', e.target.value)} 
                                   required 
                                   placeholder="Why was the task delayed?"
                                   className="w-full rounded-xl border border-rose-200 bg-rose-50/30 px-3 py-2 text-sm focus:ring-2 focus:ring-rose-500/20" 
@@ -877,13 +1123,25 @@ export const EmployeeDashboard: React.FC = () => {
                                 <label className="block text-xs font-bold text-rose-600 uppercase tracking-wider mb-1.5">Blocked Reason</label>
                                 <textarea 
                                   value={reviewState.blockedReason} 
-                                  onChange={(e) => handleReviewChange(p.id, 'blockedReason', e.target.value)} 
+                                  onChange={(e) => handleReviewChange(pid, 'blockedReason', e.target.value)} 
                                   required 
                                   placeholder="What is blocking this task?"
                                   className="w-full rounded-xl border border-rose-200 bg-rose-50/30 px-3 py-2 text-sm focus:ring-2 focus:ring-rose-500/20" 
                                 />
                               </div>
                             )}
+
+                            <div className="animate-in fade-in slide-in-from-top-2 mt-4 p-3 bg-indigo-50/50 border border-indigo-200 border-dashed rounded-xl relative">
+                              <label className="block text-xs font-bold text-indigo-900 uppercase tracking-wider mb-1.5 flex justify-between items-center">
+                                Work Done Proof (Screenshot / Document)
+                                <span className="text-[9px] font-black bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full uppercase tracking-widest">Optional</span>
+                              </label>
+                              <input 
+                                type="file" 
+                                onChange={(e) => handleReviewChange(pid, 'uploadFile', e.target.files ? e.target.files[0] : null)}
+                                className="w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200 cursor-pointer" 
+                              />
+                            </div>
 
                             <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
                               <div className="flex-1">
@@ -897,7 +1155,7 @@ export const EmployeeDashboard: React.FC = () => {
                                   max="100" 
                                   step="5"
                                   value={reviewState.completionPercentage} 
-                                  onChange={(e) => handleReviewChange(p.id, 'completionPercentage', Number(e.target.value))}
+                                  onChange={(e) => handleReviewChange(pid, 'completionPercentage', Number(e.target.value))}
                                   className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" 
                                 />
                               </div>
@@ -926,6 +1184,50 @@ export const EmployeeDashboard: React.FC = () => {
 
             </div>
           </ErrorBoundary>
+        </div>
+      )}
+
+      {/* Rejection Modal */}
+      {rejectingTask && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
+              <div className="p-2 bg-rose-100 text-rose-600 rounded-lg">
+                <AlertCircle size={24} />
+              </div>
+              <h3 className="font-heading text-xl font-bold text-slate-800">Reject Task Assignment</h3>
+            </div>
+            
+            <p className="text-sm text-slate-600 mb-4 font-medium">
+              You are rejecting the task: <span className="font-bold text-slate-800">"{rejectingTask.taskDescription || rejectingTask.project?.name || 'Task'}"</span>
+            </p>
+            
+            <div className="mb-6">
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Reason for rejection *</label>
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-colors text-sm font-medium resize-none h-32"
+                placeholder="Explain why you cannot accept this task right now..."
+                required
+              />
+            </div>
+            
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => { setRejectingTask(null); setRejectionReason(''); }} 
+                className="px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleRejectSubmit} 
+                className="px-5 py-2.5 rounded-xl text-sm font-bold bg-rose-600 text-white hover:bg-rose-500 shadow-md transition-colors flex items-center gap-2"
+              >
+                Submit Rejection
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

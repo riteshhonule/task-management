@@ -11,4 +11,13 @@ export class UpdateProjectDto {
   @IsBoolean()
   @IsOptional()
   isArchived?: boolean;
+
+  @ApiProperty({ example: 'SHG Portal', required: false })
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @ApiProperty({ example: [1, 2], required: false })
+  @IsOptional()
+  allocatedUserIds?: number[];
 }

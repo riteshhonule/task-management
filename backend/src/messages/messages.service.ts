@@ -35,14 +35,9 @@ export class MessagesService {
       recipients = dto.recipientIds;
     }
 
-    // Create notifications for all recipients
+    // Broadcast real-time message event to all recipients
     for (const userId of recipients) {
-      await this.notificationsService.createNotification(
-        userId,
-        'MESSAGE',
-        dto.type === MessageType.MANDATORY_RESPONSE ? 'Mandatory Task Message' : 'Admin Message',
-        `Admin sent you a message: "${dto.content.substring(0, 50)}${dto.content.length > 50 ? '...' : ''}"`,
-      );
+      await this.notificationsService.sendLiveMessage(userId, message);
     }
 
     return message;
@@ -57,9 +52,7 @@ export class MessagesService {
       throw new NotFoundException('Message not found');
     }
 
-    if (message.type !== MessageType.MANDATORY_RESPONSE) {
-      throw new BadRequestException('This message does not require a mandatory response.');
-    }
+
 
     // Check authorization
     const isRecipient = message.isEveryone || message.recipientIds.includes(employeeId);
@@ -108,6 +101,8 @@ export class MessagesService {
       'MESSAGE_RESPONSE',
       'Mandatory Message Response',
       `Employee responded "${dto.response}" to your request: "${message.content.substring(0, 30)}..."`,
+      undefined,
+      employeeId
     );
 
     return messageResponse;
@@ -151,11 +146,10 @@ export class MessagesService {
     });
   }
 
-  async getPendingMandatoryMessages(userId: number) {
+  async getPendingMessages(userId: number) {
     const messages = await this.prisma.message.findMany({
       where: {
         deletedAt: null,
-        type: MessageType.MANDATORY_RESPONSE,
         OR: [
           { isEveryone: true },
           { recipientIds: { has: userId } },

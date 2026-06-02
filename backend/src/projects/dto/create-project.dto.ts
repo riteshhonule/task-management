@@ -11,4 +11,8 @@ export class CreateProjectDto {
   @IsString()
   @IsOptional()
   description?: string;
+
+  @ApiProperty({ example: [1, 2], required: false })
+  @IsOptional()
+  allocatedUserIds?: number[];
 }

@@ -58,6 +58,7 @@ export class TasksService {
             completedWorkDescription: p.completedWorkDescription,
             completionPercentage: p.completionPercentage,
             blockedReason: p.blockedReason,
+            acceptanceStatus: currentUserId === targetEmployeeId ? 'ACCEPTED' : 'PENDING'
           }))
         }
       },
@@ -72,8 +73,11 @@ export class TasksService {
       await this.notificationsService.createNotification(
         targetEmployeeId,
         'TASK_ASSIGNED',
-        'New Task Assigned',
-        `You have been assigned a new multi-project task with ${dto.projects.length} project(s).`,
+        'New Project Task Assigned',
+        `Admin assigned you a task for projects: ${task.projects.map(p => p.project?.name).join(', ')}.`,
+        { taskId: task.id, taskProjectIds: task.projects.map(p => p.id) },
+        currentUserId,
+        task.id
       );
     } else {
       const admins = await this.prisma.user.findMany({
@@ -85,7 +89,10 @@ export class TasksService {
           admin.id,
           'TASK_CREATED_BY_EMP',
           'Task Created',
-          `Employee "${task.employee.name}" added a new task with ${dto.projects.length} project(s).`
+          `Employee "${task.employee.name}" added a new task for projects: ${task.projects.map(p => p.project?.name).join(', ')}.`,
+          { taskId: task.id },
+          currentUserId,
+          task.id
         );
       }
     }
@@ -223,9 +230,22 @@ export class TasksService {
     }
 
     let completionNotified = false;
+    let adminEditedDescriptions: string[] = [];
+    let newlyAssignedProjects: string[] = [];
 
     // Process TaskProjects
-    if (dto.projects && dto.projects.length > 0) {
+    if (dto.projects) {
+      const incomingProjectIds = dto.projects.filter(p => p.id).map(p => p.id);
+      
+      // Delete projects that were removed
+      const projectsToDelete = task.projects.filter(p => !incomingProjectIds.includes(p.id));
+      for (const p of projectsToDelete) {
+        await this.prisma.taskProject.update({
+          where: { id: p.id },
+          data: { deletedAt: new Date() }
+        });
+      }
+
       for (const p of dto.projects) {
         if (p.id) {
           // Update existing
@@ -234,6 +254,13 @@ export class TasksService {
             const previousStatus = existingProject.status;
             const targetStatus = p.status || previousStatus;
             
+            let adminDescriptionChanged = false;
+            let finalAdminEditedDescription = existingProject.adminEditedDescription;
+            if (currentUserRole !== Role.EMPLOYEE && p.taskDescription !== existingProject.taskDescription) {
+              finalAdminEditedDescription = true;
+              adminDescriptionChanged = true;
+            }
+            
             await this.prisma.taskProject.update({
               where: { id: p.id },
               data: {
@@ -241,6 +268,7 @@ export class TasksService {
                 taskDescription: p.taskDescription,
                 changesGivenBy: p.changesGivenBy,
                 changesSummary: p.changesSummary,
+                adminEditedDescription: finalAdminEditedDescription,
                 priority: p.priority,
                 status: p.status,
                 delayReason: p.delayReason,
@@ -248,8 +276,26 @@ export class TasksService {
                 completedWorkDescription: p.completedWorkDescription,
                 completionPercentage: p.completionPercentage,
                 notes: p.notes,
+                acceptanceStatus: p.acceptanceStatus,
+                rejectionReason: p.rejectionReason,
               }
             });
+
+            if (p.acceptanceStatus === 'REJECTED' && existingProject.acceptanceStatus !== 'REJECTED') {
+              const projName = existingProject.project?.name || 'Task';
+              const admins = await this.prisma.user.findMany({ where: { role: { in: [Role.ADMIN, Role.SUPER_ADMIN] }, deletedAt: null } });
+              for (const admin of admins) {
+                await this.notificationsService.createNotification(
+                  admin.id,
+                  'TASK_UPDATED',
+                  'Task Rejected by Employee',
+                  `Employee rejected task for project "${projName}". Reason: ${p.rejectionReason || 'No reason provided'}.`,
+                  { taskId: id, taskProjectId: p.id },
+                  currentUserId,
+                  id
+                );
+              }
+            }
 
             if (previousStatus !== targetStatus || p.remarks || p.screenshotUrl) {
               await this.prisma.taskUpdate.create({
@@ -266,9 +312,19 @@ export class TasksService {
             if (targetStatus === TaskStatus.COMPLETED && previousStatus !== TaskStatus.COMPLETED) {
               completionNotified = true;
             }
+
+            if (adminDescriptionChanged) {
+              const projDetails = await this.prisma.project.findUnique({ where: { id: existingProject.projectId } });
+              if (projDetails) {
+                adminEditedDescriptions.push(projDetails.name);
+              }
+            }
           }
         } else {
           // Create new project entry in this task
+          const newProjDetails = await this.prisma.project.findUnique({ where: { id: p.projectId } });
+          if (newProjDetails) newlyAssignedProjects.push(newProjDetails.name);
+
           await this.prisma.taskProject.create({
             data: {
               taskId: id,
@@ -283,6 +339,7 @@ export class TasksService {
               completedWorkDescription: p.completedWorkDescription,
               completionPercentage: p.completionPercentage,
               notes: p.notes,
+              acceptanceStatus: currentUserRole === Role.EMPLOYEE ? 'ACCEPTED' : 'PENDING'
             }
           });
         }
@@ -301,7 +358,10 @@ export class TasksService {
           admin.id,
           'TASK_COMPLETED',
           'Task Completed',
-          `Employee "${updatedTask.employee.name}" completed one or more projects in their daily task.`,
+          `Employee "${updatedTask.employee.name}" completed projects: ${updatedTask.projects.filter(p => p.status === 'COMPLETED').map(p => p.project?.name).join(', ')}.`,
+          { taskId: updatedTask.id },
+          currentUserId,
+          updatedTask.id
         );
       }
     }
@@ -316,21 +376,96 @@ export class TasksService {
           admin.id,
           'TASK_UPDATED',
           'Task Updated',
-          `Employee "${updatedTask.employee.name}" updated their daily task.`
+          `Employee "${updatedTask.employee.name}" updated their task for projects: ${updatedTask.projects.map(p => p.project?.name).join(', ')}.`,
+          { taskId: updatedTask.id },
+          currentUserId,
+          updatedTask.id
         );
       }
     } else {
       if (updatedTask.employeeId !== currentUserId) {
-        await this.notificationsService.createNotification(
-          updatedTask.employeeId,
-          'TASK_UPDATED',
-          'Task Updated by Admin',
-          `An admin has updated your daily task.`
-        );
+        if (newlyAssignedProjects.length > 0) {
+          await this.notificationsService.createNotification(
+            updatedTask.employeeId,
+            'TASK_ASSIGNED',
+            'New Project Task Assigned',
+            `An admin assigned you new project tasks for: ${newlyAssignedProjects.join(', ')}.`,
+            { taskId: updatedTask.id },
+            currentUserId,
+            updatedTask.id
+          );
+        }
+
+        if (adminEditedDescriptions.length > 0) {
+          await this.notificationsService.createNotification(
+            updatedTask.employeeId,
+            'TASK_UPDATED',
+            'Task Description Updated',
+            `An admin updated your task description for projects: ${adminEditedDescriptions.join(', ')}.`,
+            { taskId: updatedTask.id },
+            currentUserId,
+            updatedTask.id
+          );
+        } 
+        
+        if (newlyAssignedProjects.length === 0 && adminEditedDescriptions.length === 0) {
+          await this.notificationsService.createNotification(
+            updatedTask.employeeId,
+            'TASK_UPDATED',
+            'Task Updated by Admin',
+            `An admin updated your task for projects: ${updatedTask.projects.map(p => p.project?.name).join(', ')}.`
+          );
+        }
       }
     }
 
     return updatedTask;
+  }
+
+  async acceptPendingProjects(taskId: number, employeeId: number) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId, employeeId, deletedAt: null },
+      include: { projects: true }
+    });
+    if (!task) throw new NotFoundException('Task not found');
+    
+    await this.prisma.taskProject.updateMany({
+      where: { taskId, acceptanceStatus: 'PENDING', deletedAt: null },
+      data: { acceptanceStatus: 'ACCEPTED' }
+    });
+    return { success: true };
+  }
+
+  async rejectPendingProjects(taskId: number, employeeId: number, reason: string) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId, employeeId, deletedAt: null },
+      include: { projects: true }
+    });
+    if (!task) throw new NotFoundException('Task not found');
+    
+    await this.prisma.taskProject.updateMany({
+      where: { taskId, acceptanceStatus: 'PENDING', deletedAt: null },
+      data: { acceptanceStatus: 'REJECTED', rejectionReason: reason }
+    });
+
+    const admins = await this.prisma.user.findMany({
+      where: { role: { in: [Role.ADMIN, Role.SUPER_ADMIN] }, deletedAt: null },
+      select: { id: true },
+    });
+    
+    for (const admin of admins) {
+      await this.notificationsService.createNotification(
+        admin.id,
+        'TASK_UPDATED',
+        'Task Rejected by Employee',
+        `Employee rejected newly assigned tasks. Reason: ${reason}`,
+        { taskId },
+        employeeId,
+        taskId
+      );
+    }
+    
+    return { success: true };
   }
 
   async remove(id: number, currentUserId: number, currentUserRole: Role) {
@@ -351,7 +486,10 @@ export class TasksService {
           admin.id,
           'TASK_DELETED',
           'Task Deleted',
-          `Employee "${updated.employee.name}" deleted their task.`
+          `Employee "${updated.employee.name}" deleted their task.`,
+          { taskId: id },
+          currentUserId,
+          id
         );
       }
     } else {
@@ -360,7 +498,10 @@ export class TasksService {
           updated.employeeId,
           'TASK_DELETED',
           'Task Deleted by Admin',
-          `An admin has deleted your task.`
+          `An admin has deleted your task.`,
+          { taskId: id },
+          currentUserId,
+          id
         );
       }
     }

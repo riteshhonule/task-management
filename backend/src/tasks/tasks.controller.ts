@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, ParseIntPipe, ParseBoolPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, ParseIntPipe, ParseBoolPipe, BadRequestException } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -105,5 +105,27 @@ export class TasksController {
   @ApiOperation({ summary: 'Soft delete a task (Admin/SuperAdmin only)' })
   remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
     return this.tasksService.remove(id, user.id, user.role);
+  }
+
+  @Post(':id/accept-pending')
+  @ApiOperation({ summary: 'Accept newly assigned projects' })
+  acceptPending(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
+    return this.tasksService.acceptPendingProjects(id, user.id);
+  }
+
+  @Post(':id/reject-pending')
+  @ApiOperation({ summary: 'Reject newly assigned projects' })
+  rejectPending(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('reason') reason: string,
+    @CurrentUser() user: User,
+  ) {
+    if (!reason || reason.trim() === '') {
+      throw new BadRequestException('Reason is required for rejection');
+    }
+    return this.tasksService.rejectPendingProjects(id, user.id, reason);
   }
 }

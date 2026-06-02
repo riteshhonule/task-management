@@ -1,13 +1,24 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Bell, User, LogOut, CheckCheck } from 'lucide-react';
+import { Bell, User, LogOut, CheckCheck, Volume2, Menu } from 'lucide-react';
 import { notificationsApi } from '../services/api';
+import { VoiceSettingsModal } from './VoiceSettingsModal';
+import { NotificationCenterBase } from './NotificationCenterBase';
 
-export const Navbar: React.FC = () => {
+interface NavbarProps {
+  onMenuToggle?: () => void;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({ onMenuToggle }) => {
   const { user, logout, notifications, fetchNotifications } = useAuth();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
 
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const isToday = (dateString: string) => {
+    return new Date(dateString).toDateString() === new Date().toDateString();
+  };
+
+  const unreadCount = notifications.filter((n) => !n.isRead && isToday(n.createdAt)).length;
 
   const handleMarkAllRead = async () => {
     try {
@@ -18,18 +29,19 @@ export const Navbar: React.FC = () => {
     }
   };
 
-  const handleMarkRead = async (id: number) => {
-    try {
-      await notificationsApi.read(id);
-      await fetchNotifications();
-    } catch (err) {
-      console.error(err);
-    }
-  };
+
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-white/85 backdrop-blur-md border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+    <header className="sticky top-0 z-40 w-full bg-white/85 backdrop-blur-md border-b border-slate-200 px-4 md:px-6 py-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
+        {onMenuToggle && (
+          <button
+            onClick={onMenuToggle}
+            className="lg:hidden p-2 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors mr-2"
+          >
+            <Menu size={20} />
+          </button>
+        )}
         <h1 className="text-xl font-heading font-bold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent m-0 tracking-tight">
           Taskflow OS
         </h1>
@@ -39,6 +51,19 @@ export const Navbar: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-4">
+        {/* Voice Settings Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+            className="relative p-2 text-slate-500 hover:text-indigo-600 rounded-lg hover:bg-slate-100 transition-colors"
+            title="Voice Notification Settings"
+          >
+            <Volume2 size={20} />
+          </button>
+          
+          {showVoiceSettings && <VoiceSettingsModal onClose={() => setShowVoiceSettings(false)} />}
+        </div>
+
         {/* Notification Bell Dropdown */}
         <div className="relative">
           <button
@@ -54,43 +79,40 @@ export const Navbar: React.FC = () => {
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 mt-3 w-80 rounded-xl bg-white border border-slate-200 shadow-2xl p-4 z-50 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
-                <span className="font-heading font-semibold text-sm text-slate-800">Notifications</span>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={handleMarkAllRead}
-                    className="text-xs text-indigo-650 hover:text-indigo-500 font-medium flex items-center gap-1 cursor-pointer"
-                  >
-                    <CheckCheck size={12} /> Mark all read
-                  </button>
-                )}
-              </div>
-
-              <div className="max-h-60 overflow-y-auto space-y-3">
-                {notifications.length === 0 ? (
-                  <p className="text-xs text-slate-500 text-center py-4">No notifications yet.</p>
-                ) : (
-                  notifications.map((n) => (
-                    <div
-                      key={n.id}
-                      onClick={() => !n.isRead && handleMarkRead(n.id)}
-                      className={`p-2.5 rounded-lg transition-all cursor-pointer ${
-                        n.isRead ? 'bg-slate-50 hover:bg-slate-100 text-slate-500' : 'bg-indigo-50 hover:bg-indigo-100/80 border-l-2 border-indigo-500 text-slate-800 font-medium'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <h4 className="text-xs font-semibold">{n.title}</h4>
-                        <span className="text-[9px] text-slate-400">
-                          {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <p className="text-[11px] mt-1 leading-normal">{n.message}</p>
+            <>
+              <div 
+                className="fixed inset-0 z-40"
+                onClick={() => setShowNotifications(false)} 
+              />
+              <div className="fixed inset-x-4 top-16 sm:inset-auto sm:absolute sm:right-0 sm:top-auto sm:mt-3 sm:w-[450px] sm:max-w-[calc(100vw-2rem)] rounded-2xl bg-white border border-slate-200 shadow-2xl z-50 animate-in fade-in sm:zoom-in-95 duration-200 flex flex-col overflow-hidden h-[calc(100vh-6rem)] sm:h-[600px] max-h-[80vh]">
+                <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                      <Bell size={16} />
                     </div>
-                  ))
-                )}
+                    <div>
+                      <h2 className="font-heading font-extrabold text-sm text-slate-800 flex items-center gap-2">
+                        Notifications {unreadCount > 0 && <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-full">{unreadCount}</span>}
+                      </h2>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="text-[10px] text-indigo-700 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-lg transition-colors"
+                      >
+                        <CheckCheck size={12} /> Mark all read
+                      </button>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex-1 overflow-hidden relative bg-slate-50 flex flex-col">
+                  <NotificationCenterBase isDrawer={true} />
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
 

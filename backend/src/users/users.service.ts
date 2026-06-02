@@ -25,6 +25,7 @@ export class UsersService {
             name: dto.name,
             password: passwordHash,
             role: dto.role,
+            mobileNumber: dto.mobileNumber,
             deletedAt: null,
           },
         });
@@ -41,12 +42,14 @@ export class UsersService {
         name: dto.name,
         password: passwordHash,
         role: dto.role,
+        mobileNumber: dto.mobileNumber,
       },
       select: {
         id: true,
         email: true,
         name: true,
         role: true,
+        mobileNumber: true,
         createdAt: true,
       },
     });
@@ -60,6 +63,7 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        mobileNumber: true,
         createdAt: true,
       },
       orderBy: { name: 'asc' },
@@ -77,6 +81,7 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        mobileNumber: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -90,6 +95,7 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        mobileNumber: true,
         createdAt: true,
       },
     });
@@ -116,6 +122,7 @@ export class UsersService {
         email: true,
         name: true,
         role: true,
+        mobileNumber: true,
         createdAt: true,
       },
     });

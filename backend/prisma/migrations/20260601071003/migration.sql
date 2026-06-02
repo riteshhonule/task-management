@@ -50,6 +50,18 @@ CREATE TABLE "Task" (
     "employeeId" INTEGER NOT NULL,
     "startTime" TEXT NOT NULL,
     "expectedEndDate" TIMESTAMP(3) NOT NULL,
+    "carryForwardedFromId" INTEGER,
+    "deletedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "Task_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TaskProject" (
+    "id" SERIAL NOT NULL,
+    "taskId" INTEGER NOT NULL,
     "projectId" INTEGER NOT NULL,
     "taskDescription" TEXT NOT NULL,
     "changesGivenBy" TEXT,
@@ -61,18 +73,18 @@ CREATE TABLE "Task" (
     "notes" TEXT,
     "completedWorkDescription" TEXT,
     "completionPercentage" INTEGER DEFAULT 0,
-    "carryForwardedFromId" INTEGER,
+    "assignedByAdmin" BOOLEAN NOT NULL DEFAULT false,
     "deletedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "Task_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "TaskProject_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "TaskUpdate" (
     "id" SERIAL NOT NULL,
-    "taskId" INTEGER NOT NULL,
+    "taskProjectId" INTEGER NOT NULL,
     "statusBefore" "TaskStatus" NOT NULL,
     "statusAfter" "TaskStatus" NOT NULL,
     "remarks" TEXT,
@@ -215,13 +227,16 @@ CREATE UNIQUE INDEX "Task_carryForwardedFromId_key" ON "Task"("carryForwardedFro
 ALTER TABLE "Task" ADD CONSTRAINT "Task_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Task" ADD CONSTRAINT "Task_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "Task" ADD CONSTRAINT "Task_carryForwardedFromId_fkey" FOREIGN KEY ("carryForwardedFromId") REFERENCES "Task"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "TaskUpdate" ADD CONSTRAINT "TaskUpdate_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "TaskProject" ADD CONSTRAINT "TaskProject_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TaskProject" ADD CONSTRAINT "TaskProject_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TaskUpdate" ADD CONSTRAINT "TaskUpdate_taskProjectId_fkey" FOREIGN KEY ("taskProjectId") REFERENCES "TaskProject"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Announcement" ADD CONSTRAINT "Announcement_creatorId_fkey" FOREIGN KEY ("creatorId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

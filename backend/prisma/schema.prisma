@@ -37,6 +37,7 @@ enum MessageResponseStatus {
   ACCEPT
   REJECT
   COMMENT
+  DISMISSED
 }
 
 enum LeaveStatus {
@@ -48,6 +49,7 @@ enum LeaveStatus {
 model User {
   id                        Int                         @id @default(autoincrement())
   email                     String                      @unique
+  mobileNumber              String?
   password                  String
   name                      String
   role                      Role                        @default(EMPLOYEE)
@@ -62,8 +64,21 @@ model User {
   announcementsCreated      Announcement[]              @relation("CreatorAnnouncements")
   announcementAcks          AnnouncementAck[]           @relation("UserAcks")
   notifications             Notification[]              @relation("UserNotifications")
+  sentNotifications         Notification[]              @relation("SenderNotifications")
   uploadedAttachments       Attachment[]                @relation("UploadedBy")
   activityLogs              ActivityLog[]               @relation("UserLogs")
+  projectAllocations        ProjectAllocation[]         @relation("UserAllocations")
+  notificationTokens        NotificationToken[]         @relation("UserTokens")
+}
+
+model NotificationToken {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  user       User     @relation("UserTokens", fields: [userId], references: [id], onDelete: Cascade)
+  fcmToken   String   @unique
+  deviceType String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model Project {
@@ -75,6 +90,20 @@ model Project {
   createdAt   DateTime  @default(now())
   updatedAt    DateTime      @updatedAt
   taskProjects TaskProject[] @relation("ProjectTasks")
+  allocations ProjectAllocation[] @relation("ProjectAllocations")
+}
+
+model ProjectAllocation {
+  id        Int      @id @default(autoincrement())
+  projectId Int
+  project   Project  @relation("ProjectAllocations", fields: [projectId], references: [id])
+  userId    Int
+  user      User     @relation("UserAllocations", fields: [userId], references: [id])
+  status    String   @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([projectId, userId])
 }
 
 model Task {
@@ -103,6 +132,7 @@ model TaskProject {
   taskDescription          String
   changesGivenBy           String?
   changesSummary           String?
+  adminEditedDescription   Boolean        @default(false)
   priority                 TaskPriority   @default(MEDIUM)
   status                   TaskStatus     @default(PENDING)
   delayReason              String?
@@ -114,6 +144,8 @@ model TaskProject {
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt
   updates                  TaskUpdate[]   @relation("TaskProjectUpdates")
+  acceptanceStatus         String         @default("PENDING") // PENDING, ACCEPTED, REJECTED
+  rejectionReason          String?
 }
 
 model TaskUpdate {
@@ -154,16 +186,23 @@ model AnnouncementAck {
 }
 
 model Notification {
-  id        Int       @id @default(autoincrement())
-  userId    Int
-  user      User      @relation("UserNotifications", fields: [userId], references: [id])
-  type      String    // TASK_ASSIGNED, TASK_UPDATED, ANNOUNCEMENT, MESSAGE, LEAVE_STATUS
-  title     String
-  message   String
-  isRead    Boolean   @default(false)
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  user          User      @relation("UserNotifications", fields: [userId], references: [id])
+  senderId      Int?
+  sender        User?     @relation("SenderNotifications", fields: [senderId], references: [id])
+  type          String    // TASK_ASSIGNED, TASK_UPDATED, ANNOUNCEMENT, MESSAGE, LEAVE_STATUS
+  title         String
+  message       String
+  relatedTaskId Int?
+  status        String    @default("SENT") // SENT, DELIVERED, SEEN
+  isDelivered   Boolean   @default(false)
+  deliveredAt   DateTime?
+  isRead        Boolean   @default(false)
+  readAt        DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model Message {

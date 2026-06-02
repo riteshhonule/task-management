@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 
-const API_URL = 'http://localhost:3000';
+const API_URL = 'http://localhost:3003';
 let socket: Socket | null = null;
 
 export const connectSocket = (
@@ -41,3 +41,5 @@ export const disconnectSocket = () => {
     socket = null;
   }
 };
+
+export const getSocket = () => socket;

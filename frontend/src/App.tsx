@@ -7,12 +7,15 @@ import { ChangePassword } from './pages/ChangePassword';
 import { EmployeeDashboard } from './pages/EmployeeDashboard';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { Projects } from './pages/Projects';
+import { Employees } from './pages/Employees';
 import { AssignTasks } from './pages/AssignTasks';
 import { Messages } from './pages/Messages';
 import { Announcements } from './pages/Announcements';
 import { Leaves } from './pages/Leaves';
 import { Reports } from './pages/Reports';
 import { Analytics } from './pages/Analytics';
+import { AllocatedProjects } from './pages/AllocatedProjects';
+import { NotificationsModule } from './pages/NotificationsModule';
 
 // HomeRedirect component directs users based on auth role
 const HomeRedirect: React.FC = () => {
@@ -39,10 +42,12 @@ function App() {
             
             {/* Employee Views */}
             <Route path="dashboard" element={<EmployeeDashboard />} />
+            <Route path="allocated-projects" element={<AllocatedProjects />} />
             <Route path="change-password" element={<ChangePassword />} />
 
             {/* Admin Views */}
             <Route path="admin" element={<AdminDashboard />} />
+            <Route path="employees" element={<Employees />} />
             <Route path="projects" element={<Projects />} />
             <Route path="assign-tasks" element={<AssignTasks />} />
             <Route path="messages" element={<Messages />} />
@@ -52,6 +57,7 @@ function App() {
             <Route path="leaves" element={<Leaves />} />
             <Route path="reports" element={<Reports />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="notifications" element={<NotificationsModule />} />
           </Route>
 
           {/* Fallback Catch */}

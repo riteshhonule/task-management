@@ -59,6 +59,14 @@ export class UpdateTaskProjectDto {
   @IsString()
   @IsOptional()
   screenshotUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  acceptanceStatus?: string;
+
+  @IsString()
+  @IsOptional()
+  rejectionReason?: string;
 }
 
 export class UpdateTaskDto {

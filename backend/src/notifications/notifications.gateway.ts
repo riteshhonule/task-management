@@ -16,35 +16,25 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
   @WebSocketServer()
   server: Server;
 
-  // Track userId -> socketId for targeted messages
-  private activeClients = new Map<number, string>();
-
   handleConnection(client: Socket) {
     console.log(`WebSocket client connected: ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
     console.log(`WebSocket client disconnected: ${client.id}`);
-    for (const [userId, socketId] of this.activeClients.entries()) {
-      if (socketId === client.id) {
-        this.activeClients.delete(userId);
-        break;
-      }
-    }
   }
 
   @SubscribeMessage('register')
-  handleRegister(client: Socket, userId: number) {
-    console.log(`User ${userId} registered to socket ${client.id}`);
-    this.activeClients.set(userId, client.id);
+  handleRegister(client: Socket, userId: any) {
+    const id = String(userId);
+    console.log(`User ${id} registered to room ${id}`);
+    client.join(id);
     return { status: 'registered' };
   }
 
-  sendToUser(userId: number, event: string, data: any) {
-    const socketId = this.activeClients.get(userId);
-    if (socketId) {
-      this.server.to(socketId).emit(event, data);
-    }
+  sendToUser(userId: number | string, event: string, data: any) {
+    const id = String(userId);
+    this.server.to(id).emit(event, data);
   }
 
   broadcast(event: string, data: any) {
