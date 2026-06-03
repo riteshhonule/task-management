@@ -4,13 +4,17 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { EmailService } from '../email/email.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private emailService: EmailService,
   ) {}
 
   async login(loginDto: LoginDto) {
@@ -19,12 +23,12 @@ export class AuthService {
     });
 
     if (!user || user.deletedAt) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Incorrect email address');
     }
 
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Incorrect password');
     }
 
     const payload = { sub: user.id, email: user.email, role: user.role };
@@ -46,6 +50,7 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
+        mobileNumber: user.mobileNumber,
       },
     };
   }
@@ -89,28 +94,81 @@ export class AuthService {
       where: { email: dto.email },
     });
 
-    if (!user || user.deletedAt) {
-      throw new BadRequestException('Email address not found');
+    if (user && !user.deletedAt) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      await this.prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          token,
+          expiresAt,
+        },
+      });
+
+      // Send SMTP email
+      try {
+        await this.emailService.sendPasswordResetEmail(user.email, user.name, token);
+        // Create activity log
+        await this.prisma.activityLog.create({
+          data: {
+            userId: user.id,
+            action: 'PASSWORD_RESET_REQUEST',
+            details: `Password reset request token generated and email sent to ${user.email}.`,
+          },
+        });
+      } catch (emailError) {
+        console.error('Failed to send password reset email:', emailError);
+      }
+    }
+
+    return {
+      success: true,
+      message: 'If an account exists, a password reset link has been sent.',
+    };
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const resetToken = await this.prisma.passwordResetToken.findUnique({
+      where: { token: dto.token },
+      include: { user: true },
+    });
+
+    if (!resetToken) {
+      throw new BadRequestException('Invalid or expired token');
+    }
+
+    if (resetToken.used || resetToken.expiresAt < new Date()) {
+      throw new BadRequestException('Invalid or expired token');
     }
 
     const salt = await bcrypt.genSalt(10);
-    const newPasswordHash = await bcrypt.hash(dto.newPassword, salt);
+    const passwordHash = await bcrypt.hash(dto.password, salt);
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { password: newPasswordHash },
-    });
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: resetToken.userId },
+        data: { password: passwordHash },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { used: true },
+      }),
+    ]);
 
     // Create activity log
     await this.prisma.activityLog.create({
       data: {
-        userId: user.id,
-        action: 'PASSWORD_RESET',
-        details: `Password reset via forgot-password route for email ${user.email}.`,
+        userId: resetToken.userId,
+        action: 'PASSWORD_RESET_SUCCESS',
+        details: `Password reset successfully via token for email ${resetToken.user.email}.`,
       },
     });
 
-    return { message: 'Password has been reset successfully' };
+    return {
+      success: true,
+      message: 'Password reset successful',
+    };
   }
 
   async getProfile(userId: number) {
@@ -121,6 +179,7 @@ export class AuthService {
         email: true,
         name: true,
         role: true,
+        mobileNumber: true,
         createdAt: true,
       },
     });

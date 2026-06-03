@@ -9,6 +9,7 @@ interface User {
   email: string;
   name: string;
   role: 'SUPER_ADMIN' | 'ADMIN' | 'EMPLOYEE';
+  mobileNumber?: string;
 }
 
 interface AuthContextType {
@@ -158,8 +159,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initializeAuth();
+
+    const handleSyncNotifications = () => {
+      fetchNotifications();
+    };
+    window.addEventListener('sync-notifications', handleSyncNotifications);
+
     return () => {
       disconnectSocket();
+      window.removeEventListener('sync-notifications', handleSyncNotifications);
     };
   }, [token]);
 

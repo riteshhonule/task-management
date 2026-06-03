@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { authApi } from '../services/api';
-import { ShieldCheck, KeyRound, AlertCircle, CheckCircle } from 'lucide-react';
+import { ShieldCheck, KeyRound, AlertCircle, CheckCircle, Eye, EyeOff } from 'lucide-react';
 
 const schema = z
   .object({
@@ -22,6 +22,10 @@ export const ChangePassword: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const {
     register,
@@ -43,6 +47,9 @@ export const ChangePassword: React.FC = () => {
       });
       setSuccessMsg('Password updated successfully!');
       reset();
+      setShowOldPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.response?.data?.message || 'Failed to change password. Please verify your current password.');
@@ -83,12 +90,21 @@ export const ChangePassword: React.FC = () => {
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
               Current Password
             </label>
-            <input
-              type="password"
-              {...register('oldPassword')}
-              placeholder="Enter current password"
-              className="block w-full rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-            />
+            <div className="relative">
+              <input
+                type={showOldPassword ? 'text' : 'password'}
+                {...register('oldPassword')}
+                placeholder="Enter current password"
+                className="block w-full rounded-xl bg-white border border-slate-200 pl-4 pr-10 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowOldPassword(!showOldPassword)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-650 cursor-pointer"
+              >
+                {showOldPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
             {errors.oldPassword && (
               <p className="mt-1 text-xs font-medium text-rose-600">{errors.oldPassword.message}</p>
             )}
@@ -100,12 +116,21 @@ export const ChangePassword: React.FC = () => {
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
               New Password
             </label>
-            <input
-              type="password"
-              {...register('newPassword')}
-              placeholder="Minimum 6 characters"
-              className="block w-full rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-            />
+            <div className="relative">
+              <input
+                type={showNewPassword ? 'text' : 'password'}
+                {...register('newPassword')}
+                placeholder="Minimum 6 characters"
+                className="block w-full rounded-xl bg-white border border-slate-200 pl-4 pr-10 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-650 cursor-pointer"
+              >
+                {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
             {errors.newPassword && (
               <p className="mt-1 text-xs font-medium text-rose-600">{errors.newPassword.message}</p>
             )}
@@ -115,12 +140,21 @@ export const ChangePassword: React.FC = () => {
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
               Confirm New Password
             </label>
-            <input
-              type="password"
-              {...register('confirmPassword')}
-              placeholder="Confirm new password"
-              className="block w-full rounded-xl bg-white border border-slate-200 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-            />
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                {...register('confirmPassword')}
+                placeholder="Confirm new password"
+                className="block w-full rounded-xl bg-white border border-slate-200 pl-4 pr-10 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-650 cursor-pointer"
+              >
+                {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
             {errors.confirmPassword && (
               <p className="mt-1 text-xs font-medium text-rose-600">{errors.confirmPassword.message}</p>
             )}

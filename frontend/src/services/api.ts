@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3003';
+export const API_URL = 'https://mate-star-advert-greeting.trycloudflare.com';
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -26,6 +26,7 @@ export const authApi = {
   login: (data: any) => apiClient.post('/auth/login', data),
   changePassword: (data: any) => apiClient.post('/auth/change-password', data),
   forgotPassword: (data: any) => apiClient.post('/auth/forgot-password', data),
+  resetPassword: (data: any) => apiClient.post('/auth/reset-password', data),
   getProfile: () => apiClient.get('/auth/profile'),
 };
 

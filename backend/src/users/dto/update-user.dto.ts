@@ -3,7 +3,7 @@ import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validato
 import { Role } from '@prisma/client';
 
 export class UpdateUserDto {
-  @ApiProperty({ example: 'employee@company.com', required: false })
+  @ApiProperty({ example: 'employee@gmark.com', required: false })
   @IsEmail()
   @IsOptional()
   email?: string;
@@ -23,4 +23,9 @@ export class UpdateUserDto {
   @IsEnum(Role)
   @IsOptional()
   role?: Role;
+
+  @ApiProperty({ example: '1234567890', required: false })
+  @IsString()
+  @IsOptional()
+  mobileNumber?: string;
 }

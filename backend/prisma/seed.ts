@@ -14,6 +14,7 @@ async function main() {
     { name: 'ERP', description: 'Enterprise Resource Planning' },
     { name: 'CRM', description: 'Customer Relationship Management' },
     { name: 'IOT', description: 'Internet of Things Integrations' },
+    { name: 'Task Management System', description: 'Task Management System' },
   ];
 
   for (const proj of projects) {
@@ -35,10 +36,10 @@ async function main() {
 
   // Seed Super Admin
   const adminUser = await prisma.user.upsert({
-    where: { email: 'superadmin@company.com' },
+    where: { email: 'superadmin@gmark.com' },
     update: {},
     create: {
-      email: 'superadmin@company.com',
+      email: 'superadmin@gmark.com',
       name: 'Super Admin',
       password: passwordHash,
       role: Role.SUPER_ADMIN,
@@ -49,10 +50,10 @@ async function main() {
   // Seed standard Admin (for testing)
   const regularAdminHash = await bcrypt.hash('Admin@12345', salt);
   await prisma.user.upsert({
-    where: { email: 'admin@company.com' },
+    where: { email: 'admin@gmark.com' },
     update: {},
     create: {
-      email: 'admin@company.com',
+      email: 'admin@gmark.com',
       name: 'Admin',
       password: regularAdminHash,
       role: Role.ADMIN,

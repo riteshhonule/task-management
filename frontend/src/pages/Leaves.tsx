@@ -34,6 +34,16 @@ export const Leaves: React.FC = () => {
 
   useEffect(() => {
     fetchLeaves();
+
+    const handleSyncLeaves = () => {
+      fetchLeaves();
+    };
+
+    window.addEventListener('sync-leaves', handleSyncLeaves);
+
+    return () => {
+      window.removeEventListener('sync-leaves', handleSyncLeaves);
+    };
   }, []);
 
   const handleApply = async (e: React.FormEvent) => {

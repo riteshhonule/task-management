@@ -15,10 +15,12 @@ import {
   Bell,
   X,
 } from 'lucide-react';
+import sidebarLogo from '../assets/sidebar-logo.png';
 
 interface SidebarProps {
   onClose?: () => void;
 }
+
 
 export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { user } = useAuth();
@@ -27,42 +29,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   // Dynamic navigation items based on authorization role
   const menuItems = isAdmin
     ? [
-        { path: '/admin', name: 'Overview', icon: <LayoutDashboard size={18} /> },
-        { path: '/employees', name: 'Employees', icon: <Users size={18} /> },
-        { path: '/projects', name: 'Projects', icon: <FolderKanban size={18} /> },
-        { path: '/reports', name: 'Daily Reviews', icon: <FileSpreadsheet size={18} /> },
-        { path: '/messages', name: 'Messages Center', icon: <Mail size={18} /> },
-        { path: '/announcements', name: 'Announcements', icon: <Megaphone size={18} /> },
-        { path: '/analytics', name: 'Performance', icon: <BarChart3 size={18} /> },
-        { path: '/assign-tasks', name: 'Delegate Tasks', icon: <CheckSquare size={18} />, disabled: true },
-        { path: '/notifications', name: 'Notifications', icon: <Bell size={18} /> },
-        { path: '/leaves', name: 'Leaves Board', icon: <CalendarDays size={18} />, disabled: true },
-      ]
+      { path: '/admin', name: 'Overview', icon: <LayoutDashboard size={18} /> },
+      { path: '/reports', name: 'Daily Reviews', icon: <FileSpreadsheet size={18} /> },
+      { path: '/employees', name: 'Employees', icon: <Users size={18} /> },
+      { path: '/projects', name: 'Projects', icon: <FolderKanban size={18} /> },
+
+      { path: '/messages', name: 'Messages Center', icon: <Mail size={18} /> },
+      { path: '/announcements', name: 'Announcements', icon: <Megaphone size={18} /> },
+      { path: '/analytics', name: 'Performance', icon: <BarChart3 size={18} /> },
+      { path: '/notifications', name: 'Notifications', icon: <Bell size={18} /> },
+      { path: '/assign-tasks', name: 'Delegate Tasks', icon: <CheckSquare size={18} />, disabled: true },
+
+      { path: '/leaves', name: 'Leaves Board', icon: <CalendarDays size={18} />, disabled: true },
+    ]
     : [
-        { path: '/dashboard', name: 'My Tasks', icon: <LayoutDashboard size={18} /> },
-        { path: '/allocated-projects', name: 'Allocated Projects', icon: <FolderKanban size={18} /> },
-        { path: '/messages', name: 'Messages Center', icon: <Mail size={18} /> },
-        { path: '/announcements', name: 'Announcements', icon: <Megaphone size={18} /> },
-        { path: '/change-password', name: 'Security', icon: <KeyRound size={18} /> },
-        { path: '/notifications', name: 'Notifications', icon: <Bell size={18} /> },
-        { path: '/leaves', name: 'My Leaves', icon: <CalendarDays size={18} />, disabled: true },
-      ];
+      { path: '/dashboard', name: 'My Tasks', icon: <LayoutDashboard size={18} /> },
+      { path: '/allocated-projects', name: 'Allocated Projects', icon: <FolderKanban size={18} /> },
+      { path: '/messages', name: 'Messages Center', icon: <Mail size={18} /> },
+      { path: '/announcements', name: 'Announcements', icon: <Megaphone size={18} /> },
+      { path: '/change-password', name: 'Security', icon: <KeyRound size={18} /> },
+      { path: '/notifications', name: 'Notifications', icon: <Bell size={18} /> },
+      { path: '/leaves', name: 'My Leaves', icon: <CalendarDays size={18} />, disabled: true },
+    ];
 
   return (
-    <aside className="w-64 min-h-screen bg-slate-950 border-r border-slate-900 px-4 py-6 flex flex-col justify-between">
+    <aside className="w-64 h-full bg-slate-950 border-r border-slate-900 px-4 py-6 flex flex-col justify-between">
       <div className="space-y-6">
         <div className="flex items-center justify-between px-3 pb-4 border-b border-slate-900">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-indigo-500 flex items-center justify-center font-heading font-black text-white text-base">
+            {/* <div className="h-8 w-8 rounded-lg bg-indigo-500 flex items-center justify-center font-heading font-black text-white text-base">
               TF
-            </div>
-            <div>
+            </div> */}
+
+            {/* <div>
               <h3 className="font-heading font-semibold text-slate-200 text-sm">Taskflow Management</h3>
               <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Workspace</span>
-            </div>
+            </div> */}
+            {/* add logo here  */}
+            <img
+              src={sidebarLogo}
+              alt="Gmark"
+              className="w-48 md:w-48 object-contain mb-2"
+            />
           </div>
           {onClose && (
-            <button 
+            <button
               onClick={onClose}
               className="lg:hidden p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
             >
@@ -89,10 +100,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                 to={item.path}
                 onClick={onClose}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                    isActive
-                      ? 'bg-indigo-600/15 text-indigo-400 border border-indigo-500/20 font-semibold shadow-lg shadow-indigo-500/5'
-                      : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent'
+                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${isActive
+                    ? 'bg-indigo-600/15 text-indigo-400 border border-indigo-500/20 font-semibold shadow-lg shadow-indigo-500/5'
+                    : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200 border border-transparent'
                   }`
                 }
               >

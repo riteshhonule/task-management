@@ -36,6 +36,16 @@ export const Announcements: React.FC = () => {
 
   useEffect(() => {
     fetchAnnouncements();
+
+    const handleSyncAnnouncements = () => {
+      fetchAnnouncements();
+    };
+
+    window.addEventListener('sync-announcements', handleSyncAnnouncements);
+
+    return () => {
+      window.removeEventListener('sync-announcements', handleSyncAnnouncements);
+    };
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {

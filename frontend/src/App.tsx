@@ -16,6 +16,7 @@ import { Reports } from './pages/Reports';
 import { Analytics } from './pages/Analytics';
 import { AllocatedProjects } from './pages/AllocatedProjects';
 import { NotificationsModule } from './pages/NotificationsModule';
+import { ResetPassword } from './pages/ResetPassword';
 
 // HomeRedirect component directs users based on auth role
 const HomeRedirect: React.FC = () => {
@@ -35,6 +36,7 @@ function App() {
         <Routes>
           {/* Public Login Route */}
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Secure Layout Routes */}
           <Route path="/" element={<Layout />}>

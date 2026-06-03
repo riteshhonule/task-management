@@ -61,6 +61,20 @@ export const AssignTasks: React.FC = () => {
 
   useEffect(() => {
     loadData();
+
+    const handleSync = () => {
+      loadData();
+    };
+
+    window.addEventListener('sync-tasks', handleSync);
+    window.addEventListener('sync-projects', handleSync);
+    window.addEventListener('sync-users', handleSync);
+
+    return () => {
+      window.removeEventListener('sync-tasks', handleSync);
+      window.removeEventListener('sync-projects', handleSync);
+      window.removeEventListener('sync-users', handleSync);
+    };
   }, [filterEmployee, filterProject, filterStatus, searchQuery]);
 
   const handleProjectToggle = (projectId: number) => {

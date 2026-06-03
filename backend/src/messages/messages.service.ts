@@ -40,6 +40,7 @@ export class MessagesService {
       await this.notificationsService.sendLiveMessage(userId, message);
     }
 
+    this.notificationsService.broadcastEvent('message_updated', { action: 'create', messageId: message.id });
     return message;
   }
 
@@ -105,6 +106,7 @@ export class MessagesService {
       employeeId
     );
 
+    this.notificationsService.broadcastEvent('message_updated', { action: 'respond', messageId: message.id });
     return messageResponse;
   }
 

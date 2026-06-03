@@ -46,6 +46,7 @@ export class LeavesService {
       );
     }
 
+    this.notificationsService.broadcastEvent('leave_updated', { action: 'apply', leaveId: leave.id });
     return leave;
   }
 
@@ -115,6 +116,7 @@ export class LeavesService {
       `Your leave application from ${leave.startDate.toISOString().split('T')[0]} has been ${dto.status.toLowerCase()}.`,
     );
 
+    this.notificationsService.broadcastEvent('leave_updated', { action: 'updateStatus', leaveId: updatedLeave.id });
     return updatedLeave;
   }
 }

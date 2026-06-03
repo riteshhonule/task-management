@@ -97,6 +97,8 @@ export class TasksService {
       }
     }
 
+    this.notificationsService.broadcastEvent('task_updated', { action: 'create', taskId: task.id });
+    this.notificationsService.broadcastEvent('metrics_updated', {});
     return task;
   }
 
@@ -419,13 +421,15 @@ export class TasksService {
       }
     }
 
+    this.notificationsService.broadcastEvent('task_updated', { action: 'update', taskId: updatedTask.id });
+    this.notificationsService.broadcastEvent('metrics_updated', {});
     return updatedTask;
   }
 
   async acceptPendingProjects(taskId: number, employeeId: number) {
     const task = await this.prisma.task.findUnique({
       where: { id: taskId, employeeId, deletedAt: null },
-      include: { projects: true }
+      include: { projects: true, employee: true }
     });
     if (!task) throw new NotFoundException('Task not found');
     
@@ -433,6 +437,27 @@ export class TasksService {
       where: { taskId, acceptanceStatus: 'PENDING', deletedAt: null },
       data: { acceptanceStatus: 'ACCEPTED' }
     });
+
+    const admins = await this.prisma.user.findMany({
+      where: { role: { in: [Role.ADMIN, Role.SUPER_ADMIN] }, deletedAt: null },
+      select: { id: true },
+    });
+    
+    const employeeName = task.employee?.name || 'Employee';
+    for (const admin of admins) {
+      await this.notificationsService.createNotification(
+        admin.id,
+        'TASK_ACCEPTED',
+        'Task Accepted',
+        `Employee "${employeeName}" has accepted the assigned task.`,
+        { taskId },
+        employeeId,
+        taskId
+      );
+    }
+
+    this.notificationsService.broadcastEvent('task_updated', { action: 'accept', taskId });
+    this.notificationsService.broadcastEvent('metrics_updated', {});
     return { success: true };
   }
 
@@ -465,6 +490,8 @@ export class TasksService {
       );
     }
     
+    this.notificationsService.broadcastEvent('task_updated', { action: 'reject', taskId });
+    this.notificationsService.broadcastEvent('metrics_updated', {});
     return { success: true };
   }
 
@@ -505,6 +532,8 @@ export class TasksService {
         );
       }
     }
+    this.notificationsService.broadcastEvent('task_updated', { action: 'delete', taskId: id });
+    this.notificationsService.broadcastEvent('metrics_updated', {});
     return updated;
   }
 
@@ -574,6 +603,8 @@ export class TasksService {
         });
       }
 
+      this.notificationsService.broadcastEvent('task_updated', { action: 'carry_forward', taskId });
+      this.notificationsService.broadcastEvent('metrics_updated', {});
       return { message: 'Task carried forward successfully', newTask };
     } else {
       // Just mark notes for incomplete ones
@@ -588,6 +619,8 @@ export class TasksService {
           },
         });
       }
+      this.notificationsService.broadcastEvent('task_updated', { action: 'carry_forward_dismiss', taskId });
+      this.notificationsService.broadcastEvent('metrics_updated', {});
       return { message: 'Carry forward dismissed' };
     }
   }

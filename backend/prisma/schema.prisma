@@ -69,6 +69,7 @@ model User {
   activityLogs              ActivityLog[]               @relation("UserLogs")
   projectAllocations        ProjectAllocation[]         @relation("UserAllocations")
   notificationTokens        NotificationToken[]         @relation("UserTokens")
+  passwordResetTokens       PasswordResetToken[]        @relation("UserPasswordResetTokens")
 }
 
 model NotificationToken {
@@ -200,6 +201,7 @@ model Notification {
   deliveredAt   DateTime?
   isRead        Boolean   @default(false)
   readAt        DateTime?
+  seenAt        DateTime?
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -276,4 +278,14 @@ model ActivityLog {
   deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation("UserPasswordResetTokens", fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
 }

@@ -24,12 +24,21 @@ export class ReportsController {
 
   @Get('export-excel')
   @ApiOperation({ summary: 'Export daily tasks review to Excel' })
-  @ApiQuery({ name: 'date', required: false, description: 'YYYY-MM-DD' })
-  async exportExcel(@Res() res: Response, @Query('date') date?: string) {
-    const buffer = await this.reportsService.exportExcel(date);
+  @ApiQuery({ name: 'date', required: false, description: 'YYYY-MM-DD, YYYY-MM, or YYYY' })
+  @ApiQuery({ name: 'tab', required: false })
+  @ApiQuery({ name: 'projectId', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  async exportExcel(
+    @Res() res: Response,
+    @Query('date') date?: string,
+    @Query('tab') tab?: string,
+    @Query('projectId') projectId?: string,
+    @Query('search') search?: string,
+  ) {
+    const buffer = await this.reportsService.exportExcel(date, tab, projectId, search);
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename=daily-review-${date || 'today'}.xlsx`,
+      'Content-Disposition': `attachment; filename=daily-review-${date || 'filtered'}.xlsx`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);
@@ -37,12 +46,21 @@ export class ReportsController {
 
   @Get('export-pdf')
   @ApiOperation({ summary: 'Export daily tasks review to PDF' })
-  @ApiQuery({ name: 'date', required: false, description: 'YYYY-MM-DD' })
-  async exportPdf(@Res() res: Response, @Query('date') date?: string) {
-    const buffer = await this.reportsService.exportPdf(date);
+  @ApiQuery({ name: 'date', required: false, description: 'YYYY-MM-DD, YYYY-MM, or YYYY' })
+  @ApiQuery({ name: 'tab', required: false })
+  @ApiQuery({ name: 'projectId', required: false })
+  @ApiQuery({ name: 'search', required: false })
+  async exportPdf(
+    @Res() res: Response,
+    @Query('date') date?: string,
+    @Query('tab') tab?: string,
+    @Query('projectId') projectId?: string,
+    @Query('search') search?: string,
+  ) {
+    const buffer = await this.reportsService.exportPdf(date, tab, projectId, search);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename=daily-review-${date || 'today'}.pdf`,
+      'Content-Disposition': `attachment; filename=daily-review-${date || 'filtered'}.pdf`,
       'Content-Length': buffer.length,
     });
     res.end(buffer);

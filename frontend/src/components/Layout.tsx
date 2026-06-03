@@ -1,15 +1,57 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
+import { Outlet, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
-import { messagesApi } from '../services/api';
-import { AlertTriangle, MessageSquare, X, Send } from 'lucide-react';
+import { messagesApi, usersApi } from '../services/api';
+import { AlertTriangle, MessageSquare, X, Send, User, CheckCheck, AlertCircle, KeyRound } from 'lucide-react';
 import { GlobalNotificationPopup } from './GlobalNotificationPopup';
-import { io } from 'socket.io-client';
 
 export const Layout: React.FC = () => {
-  const { token, user, loading } = useAuth();
+  const { token, user, loading, refreshProfile } = useAuth();
+  const navigate = useNavigate();
+
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editMobile, setEditMobile] = useState('');
+  const [updateLoading, setUpdateLoading] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  const openProfileModal = () => {
+    setEditName(user?.name || '');
+    setEditEmail(user?.email || '');
+    setEditMobile(user?.mobileNumber || '');
+    setUpdateSuccess(false);
+    setUpdateError(null);
+    setIsEditing(false);
+    setShowProfileModal(true);
+  };
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setUpdateLoading(true);
+    setUpdateSuccess(false);
+    setUpdateError(null);
+    try {
+      await usersApi.update(user.id, {
+        name: editName,
+        email: editEmail,
+        mobileNumber: editMobile,
+      });
+      await refreshProfile();
+      setUpdateSuccess(true);
+      setIsEditing(false);
+    } catch (err: any) {
+      console.error(err);
+      setUpdateError(err.response?.data?.message || 'Failed to update profile details.');
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
 
   // Carry Forward State
 
@@ -56,20 +98,21 @@ export const Layout: React.FC = () => {
   useEffect(() => {
     if (token && user) {
       runEmployeeChecks();
-      
-      const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000', { transports: ['websocket'] });
-      socket.on('connect', () => socket.emit('register', user.id));
 
-      socket.on('new_message', (msg: any) => {
+      const handleNewMessage = (e: Event) => {
+        const customEvent = e as CustomEvent;
+        const msg = customEvent.detail;
         if (msg.type === 'MANDATORY_RESPONSE') {
           setPendingMandatoryMessages(prev => [...prev, msg]);
         } else {
           setPendingNormalMessages(prev => [...prev, msg]);
         }
-      });
+      };
+
+      window.addEventListener('sync-new-message', handleNewMessage);
 
       return () => {
-        socket.disconnect();
+        window.removeEventListener('sync-new-message', handleNewMessage);
       };
     }
   }, [token, user]);
@@ -154,7 +197,7 @@ export const Layout: React.FC = () => {
       <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-800">
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
-          <p className="text-sm font-medium tracking-wide">Syncing session state...</p>
+          <p className="text-md font-medium tracking-wide text-orange-400">Please Wait...</p>
         </div>
       </div>
     );
@@ -165,24 +208,24 @@ export const Layout: React.FC = () => {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50 relative overflow-hidden">
+    <div className="flex h-screen bg-slate-50 relative overflow-hidden">
       <GlobalNotificationPopup />
-      
+
       {/* Mobile Sidebar Overlay */}
       {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden" 
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
 
       {/* Sidebar Container */}
-      <div className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0 h-full flex-shrink-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <Sidebar onClose={() => setIsMobileMenuOpen(false)} />
       </div>
 
-      <div className="flex-1 flex flex-col min-h-screen overflow-y-auto w-full max-w-full overflow-x-hidden">
-        <Navbar onMenuToggle={() => setIsMobileMenuOpen(true)} />
+      <div className="flex-1 flex flex-col h-full overflow-y-auto w-full max-w-full overflow-x-hidden">
+        <Navbar onMenuToggle={() => setIsMobileMenuOpen(true)} onProfileClick={openProfileModal} />
         <main className="flex-grow p-4 md:p-6 w-full max-w-full overflow-x-hidden">
           <Outlet />
         </main>
@@ -261,7 +304,7 @@ export const Layout: React.FC = () => {
                 </div>
                 <h3 className="font-heading text-lg font-semibold text-slate-800">New Admin Message</h3>
               </div>
-              <button 
+              <button
                 onClick={dismissNormalMessage}
                 className="text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 p-2 rounded-xl transition-colors"
               >
@@ -312,6 +355,157 @@ export const Layout: React.FC = () => {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showProfileModal && user && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="relative p-6 bg-indigo-600 text-white">
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="absolute top-4 right-4 p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+              <div className="flex items-center gap-4">
+                <div className="h-14 w-14 rounded-xl bg-white/15 flex items-center justify-center text-white border border-white/25">
+                  <User size={28} />
+                </div>
+                <div>
+                  <h3 className="font-heading font-extrabold text-lg leading-snug">My Profile</h3>
+                  <span className="inline-block mt-1 text-[10px] font-bold bg-white/25 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    {user.role.replace('_', ' ')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <form onSubmit={handleUpdateProfile} className="p-6 space-y-4">
+              {updateSuccess && (
+                <div className="flex items-start gap-3 rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-xs font-medium text-emerald-600">
+                  <CheckCheck size={16} className="shrink-0 mt-0.5" />
+                  <span>Profile updated successfully!</span>
+                </div>
+              )}
+
+              {updateError && (
+                <div className="flex items-start gap-3 rounded-xl bg-rose-50 border border-rose-100 p-3 text-xs font-medium text-rose-600">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <span>{updateError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  readOnly={!isEditing}
+                  className={`block w-full rounded-xl px-3.5 py-2.5 text-sm transition-all focus:outline-none ${
+                    isEditing
+                      ? 'bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20'
+                      : 'bg-slate-50 border border-slate-100 text-slate-500 cursor-default select-none'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  readOnly={!isEditing}
+                  className={`block w-full rounded-xl px-3.5 py-2.5 text-sm transition-all focus:outline-none ${
+                    isEditing
+                      ? 'bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20'
+                      : 'bg-slate-50 border border-slate-100 text-slate-500 cursor-default select-none'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Mobile Number
+                </label>
+                <input
+                  type="text"
+                  placeholder={isEditing ? "Enter mobile number" : "Not specified"}
+                  value={editMobile}
+                  onChange={(e) => setEditMobile(e.target.value)}
+                  readOnly={!isEditing}
+                  className={`block w-full rounded-xl px-3.5 py-2.5 text-sm transition-all focus:outline-none ${
+                    isEditing
+                      ? 'bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20'
+                      : 'bg-slate-50 border border-slate-100 text-slate-500 cursor-default select-none'
+                  }`}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              {isEditing ? (
+                <div className="pt-2 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditName(user.name || '');
+                      setEditEmail(user.email || '');
+                      setEditMobile(user.mobileNumber || '');
+                      setIsEditing(false);
+                      setUpdateError(null);
+                    }}
+                    className="flex-1 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 py-2.5 text-sm font-semibold transition-all cursor-pointer text-center"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateLoading}
+                    className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 text-sm font-semibold transition-all active:translate-y-0 hover:-translate-y-0.5 shadow-lg shadow-indigo-600/10 cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {updateLoading ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-2 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 text-sm font-semibold transition-all active:translate-y-0 hover:-translate-y-0.5 shadow-lg shadow-indigo-600/10 cursor-pointer text-center"
+                  >
+                    Edit Info
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileModal(false);
+                      navigate('/change-password');
+                    }}
+                    className="w-full rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 py-2.5 text-sm font-semibold transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <KeyRound size={16} />
+                    Change Password / Security
+                  </button>
+                </div>
+              )}
+            </form>
           </div>
         </div>
       )}

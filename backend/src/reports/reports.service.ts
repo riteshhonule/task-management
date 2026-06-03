@@ -9,16 +9,53 @@ import { Writable } from 'stream';
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
-  async getDailyReviewData(dateStr?: string) {
-    const targetDate = dateStr ? new Date(dateStr) : new Date();
-    const start = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-    const end = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999);
+  async getDailyReviewData(dateStr?: string, tab?: string, projectId?: string, search?: string) {
+    const whereClause: any = { deletedAt: null };
+
+    // Handle Date/Day/Month/Year filtering on the startDate field
+    if (dateStr) {
+      const parts = dateStr.split('-');
+      if (parts.length === 1 && parts[0].length === 4) {
+        // Year filter: YYYY
+        const year = parseInt(parts[0]);
+        whereClause.startDate = {
+          gte: new Date(year, 0, 1),
+          lte: new Date(year, 11, 31, 23, 59, 59, 999),
+        };
+      } else if (parts.length === 2 && parts[0].length === 4 && parts[1].length === 2) {
+        // Month filter: YYYY-MM
+        const year = parseInt(parts[0]);
+        const month = parseInt(parts[1]) - 1;
+        whereClause.startDate = {
+          gte: new Date(year, month, 1),
+          lte: new Date(year, month + 1, 0, 23, 59, 59, 999),
+        };
+      } else {
+        // Full Date filter: YYYY-MM-DD
+        const targetDate = new Date(dateStr);
+        if (!isNaN(targetDate.getTime())) {
+          whereClause.startDate = {
+            gte: new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()),
+            lte: new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59, 999),
+          };
+        }
+      }
+    } else if (tab === 'TODAY') {
+      const today = new Date();
+      whereClause.startDate = {
+        gte: new Date(today.getFullYear(), today.getMonth(), today.getDate()),
+        lte: new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999),
+      };
+    } else if (tab === 'YESTERDAY') {
+      const yesterday = new Date(Date.now() - 86400000);
+      whereClause.startDate = {
+        gte: new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate()),
+        lte: new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 23, 59, 59, 999),
+      };
+    }
 
     const tasks = await this.prisma.task.findMany({
-      where: {
-        deletedAt: null,
-        startDate: { gte: start, lte: end },
-      },
+      where: whereClause,
       include: {
         employee: {
           select: { name: true, email: true },
@@ -32,7 +69,7 @@ export class ReportsService {
       orderBy: { employee: { name: 'asc' } },
     });
 
-    const flattenedRows = [];
+    let flattenedRows = [];
     for (const t of tasks) {
       if (t.projects && t.projects.length > 0) {
         for (const p of t.projects) {
@@ -43,6 +80,7 @@ export class ReportsService {
             employeeName: t.employee?.name || 'N/A',
             startTime: t.startTime,
             expectedEndDate: t.expectedEndDate,
+            projectId: p.projectId,
             project: p.project?.name || 'N/A',
             taskDescription: p.taskDescription,
             changesGivenBy: p.changesGivenBy,
@@ -53,11 +91,32 @@ export class ReportsService {
         }
       }
     }
+
+    // In-memory tab status filtering
+    if (tab && !['TODAY', 'YESTERDAY', 'ALL'].includes(tab)) {
+      flattenedRows = flattenedRows.filter(r => r.status === tab);
+    }
+
+    // In-memory project ID filtering
+    if (projectId) {
+      flattenedRows = flattenedRows.filter(r => r.projectId.toString() === projectId);
+    }
+
+    // In-memory search filtering
+    if (search) {
+      const term = search.toLowerCase();
+      flattenedRows = flattenedRows.filter(r =>
+        (r.taskDescription || '').toLowerCase().includes(term) ||
+        (r.project || '').toLowerCase().includes(term) ||
+        (r.employeeName || '').toLowerCase().includes(term)
+      );
+    }
+
     return flattenedRows;
   }
 
-  async exportExcel(dateStr?: string): Promise<Buffer> {
-    const rows = await this.getDailyReviewData(dateStr);
+  async exportExcel(dateStr?: string, tab?: string, projectId?: string, search?: string): Promise<Buffer> {
+    const rows = await this.getDailyReviewData(dateStr, tab, projectId, search);
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Daily Task Review');
 
@@ -111,9 +170,9 @@ export class ReportsService {
     return workbook.xlsx.writeBuffer() as unknown as Promise<Buffer>;
   }
 
-  async exportPdf(dateStr?: string): Promise<Buffer> {
-    const rows = await this.getDailyReviewData(dateStr);
-    const dateFormatted = (dateStr ? new Date(dateStr) : new Date()).toISOString().split('T')[0];
+  async exportPdf(dateStr?: string, tab?: string, projectId?: string, search?: string): Promise<Buffer> {
+    const rows = await this.getDailyReviewData(dateStr, tab, projectId, search);
+    const dateFormatted = dateStr ? dateStr : 'All / Filtered';
 
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });

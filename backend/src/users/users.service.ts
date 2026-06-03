@@ -4,10 +4,14 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
 import { Role } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async create(dto: CreateUserDto) {
     const existing = await this.prisma.user.findUnique({
@@ -19,7 +23,7 @@ export class UsersService {
         // Restore soft-deleted user
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(dto.password, salt);
-        return this.prisma.user.update({
+        const restored = await this.prisma.user.update({
           where: { email: dto.email },
           data: {
             name: dto.name,
@@ -29,6 +33,8 @@ export class UsersService {
             deletedAt: null,
           },
         });
+        this.notificationsService.broadcastEvent('user_updated', { action: 'restore', userId: restored.id });
+        return restored;
       }
       throw new BadRequestException('User with this email already exists.');
     }
@@ -36,7 +42,7 @@ export class UsersService {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(dto.password, salt);
 
-    return this.prisma.user.create({
+    const newUser = await this.prisma.user.create({
       data: {
         email: dto.email,
         name: dto.name,
@@ -53,6 +59,8 @@ export class UsersService {
         createdAt: true,
       },
     });
+    this.notificationsService.broadcastEvent('user_updated', { action: 'create', userId: newUser.id });
+    return newUser;
   }
 
   async findAll() {
@@ -114,7 +122,7 @@ export class UsersService {
       updateData.password = await bcrypt.hash(dto.password, salt);
     }
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: updateData,
       select: {
@@ -126,6 +134,8 @@ export class UsersService {
         createdAt: true,
       },
     });
+    this.notificationsService.broadcastEvent('user_updated', { action: 'update', userId: updated.id });
+    return updated;
   }
 
   async remove(id: number) {
@@ -133,10 +143,12 @@ export class UsersService {
     if (user.role === Role.SUPER_ADMIN) {
       throw new BadRequestException('Cannot delete Super Admin account.');
     }
-    return this.prisma.user.update({
+    const deleted = await this.prisma.user.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
+    this.notificationsService.broadcastEvent('user_updated', { action: 'delete', userId: id });
+    return deleted;
   }
 
   async getActivityLogs() {

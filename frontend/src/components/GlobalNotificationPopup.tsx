@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { Bell, X, CheckCircle, Edit, MessageSquare, Megaphone, CheckSquare } from 'lucide-react';
 import { voiceService } from '../services/voiceService';
@@ -16,45 +15,36 @@ interface NotificationPayload {
 
 export const GlobalNotificationPopup: React.FC = () => {
   const { user, token } = useAuth();
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [notifications, setNotifications] = useState<NotificationPayload[]>([]);
   const [rejectingIndex, setRejectingIndex] = useState<number | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
   useEffect(() => {
-    if (!user || !token) {
-      if (socket) {
-        socket.disconnect();
-        setSocket(null);
-      }
-      return;
-    }
+    if (!user || !token) return;
 
-    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000', {
-      transports: ['websocket'],
-    });
-
-    newSocket.on('connect', () => {
-      newSocket.emit('register', user.id);
-    });
-
-    newSocket.on('notification', (data: NotificationPayload) => {
+    const handleNotification = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const data = customEvent.detail;
       setNotifications((prev) => [...prev, data]);
       let priority = 3;
       if (data.type === 'MANDATORY_RESPONSE') priority = 1;
       else if (data.type === 'TASK_ASSIGNED' || data.type === 'PROJECT_ALLOCATED') priority = 2;
       voiceService.announce(data.message, priority);
-    });
+    };
 
-    newSocket.on('announcement_notification', (data: NotificationPayload) => {
+    const handleAnnouncement = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const data = customEvent.detail;
       setNotifications((prev) => [...prev, data]);
       voiceService.announce(data.message, 3);
-    });
+    };
 
-    setSocket(newSocket);
+    window.addEventListener('sync-notifications', handleNotification);
+    window.addEventListener('sync-announcements', handleAnnouncement);
 
     return () => {
-      newSocket.disconnect();
+      window.removeEventListener('sync-notifications', handleNotification);
+      window.removeEventListener('sync-announcements', handleAnnouncement);
     };
   }, [user, token]);
 
@@ -100,6 +90,7 @@ export const GlobalNotificationPopup: React.FC = () => {
   const getStyleForType = (type: string) => {
     switch (type) {
       case 'TASK_COMPLETED':
+      case 'TASK_ACCEPTED':
         return {
           bg: 'bg-emerald-500',
           lightBg: 'bg-emerald-50',

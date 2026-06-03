@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Lock, Mail, AlertCircle, Sparkles } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, AlertCircle } from 'lucide-react';
 import { authApi } from '../services/api';
+import companyLogo from '../assets/logo-gmark.png';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -17,13 +18,26 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export const Login: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
-  
+
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isForgotMode, setIsForgotMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
+  const [resendCountdown, setResendCountdown] = useState(0);
+
+  useEffect(() => {
+    let timer: any;
+    if (resendCountdown > 0) {
+      timer = setTimeout(() => {
+        setResendCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [resendCountdown]);
 
   const {
     register,
@@ -59,6 +73,7 @@ export const Login: React.FC = () => {
     try {
       await authApi.forgotPassword({ email: forgotEmail });
       setForgotSuccess('A password reset code has been sent to your email.');
+      setResendCountdown(60);
     } catch (err: any) {
       setFormError(err.response?.data?.message || 'Failed to submit request.');
     } finally {
@@ -74,16 +89,21 @@ export const Login: React.FC = () => {
 
       <div className="w-full max-w-md space-y-8 z-10">
         <div className="flex flex-col items-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-650 shadow-xl shadow-indigo-600/25 border border-indigo-400/20">
+          {/* <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-650 shadow-xl shadow-indigo-600/25 border border-indigo-400/20">
             <Sparkles className="h-6 w-6 text-white animate-pulse" />
-          </div>
+          </div> */}
+          <img
+            src={companyLogo}
+            alt="Gmark"
+            className="w-48 md:w-48 object-contain mb-2"
+          />
           <h2 className="mt-6 text-center text-3xl font-heading font-extrabold tracking-tight text-slate-800">
-            {isForgotMode ? 'Recover Password' : 'Sign in to Taskflow'}
+            {isForgotMode ? 'Recover Password' : 'Sign in to Gmark Task Management'}
           </h2>
           <p className="mt-2 text-center text-xs text-slate-500 max-w-xs leading-normal">
             {isForgotMode
               ? 'Enter your registered email address to request a temporary access token.'
-              : 'Enterprise Employee Task & Performance Management System.'}
+              : 'Employee Task & Performance Management System.'}
           </p>
         </div>
 
@@ -115,7 +135,7 @@ export const Login: React.FC = () => {
                   <input
                     type="email"
                     {...register('email')}
-                    placeholder="name@company.com"
+                    placeholder="name@gmark.com"
                     className="block w-full rounded-xl bg-white border border-slate-200 py-3.5 pl-10 pr-4 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                   />
                 </div>
@@ -186,7 +206,7 @@ export const Login: React.FC = () => {
                     type="email"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="name@company.com"
+                    placeholder="name@gmark.com"
                     required
                     className="block w-full rounded-xl bg-white border border-slate-205 py-3.5 pl-10 pr-4 text-sm text-slate-805 placeholder-slate-405 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
                   />
@@ -195,13 +215,17 @@ export const Login: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={isLoading || !forgotEmail}
-                className="w-full rounded-xl bg-indigo-650 py-3.5 text-sm font-semibold text-white hover:bg-indigo-550 transition-all cursor-pointer shadow-lg"
+                disabled={isLoading || !forgotEmail || resendCountdown > 0}
+                className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white hover:bg-indigo-500 transition-all cursor-pointer shadow-lg shadow-indigo-600/15 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
                 {isLoading ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                ) : resendCountdown > 0 ? (
+                  `Resend Link in ${resendCountdown}s`
+                ) : forgotSuccess ? (
+                  'Resend Password Reset Link'
                 ) : (
-                  'Request Access Code'
+                  'Send Password Reset Link'
                 )}
               </button>
 
@@ -211,6 +235,7 @@ export const Login: React.FC = () => {
                   setIsForgotMode(false);
                   setFormError(null);
                   setForgotSuccess(null);
+                  setResendCountdown(0);
                 }}
                 className="w-full text-center text-xs font-semibold text-slate-500 hover:text-slate-700 py-1 cursor-pointer"
               >

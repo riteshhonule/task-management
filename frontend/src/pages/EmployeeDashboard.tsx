@@ -5,8 +5,6 @@ import {
   Edit, Loader2, Save, X, CheckSquare, AlertCircle
 } from 'lucide-react';
 import { ErrorBoundary } from '../components/ErrorBoundary';
-import { io } from 'socket.io-client';
-import { useAuth } from '../context/AuthContext';
 
 type TabType = 'TODAY' | 'YESTERDAY' | 'ALL' | 'COMPLETED' | 'IN_PROGRESS' | 'DELAYED' | 'PENDING';
 
@@ -19,7 +17,6 @@ const getLocalYYYYMMDD = (d?: Date | string | number | null) => {
 };
 
 export const EmployeeDashboard: React.FC = () => {
-  const { user, token } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('TODAY');
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
@@ -90,26 +87,25 @@ export const EmployeeDashboard: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!user || !token) return;
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:3000', {
-      transports: ['websocket'],
-    });
+    const handleSyncTasks = () => {
+      fetchDashboardData();
+      setTaskUpdatedBanner(true);
+    };
 
-    socket.on('connect', () => {
-      socket.emit('register', user.id);
-    });
+    const handleSyncGeneral = () => {
+      fetchDashboardData();
+    };
 
-    socket.on('notification', (data: any) => {
-      if (data.type === 'TASK_UPDATED' || data.type === 'TASK_ASSIGNED') {
-        fetchDashboardData();
-        setTaskUpdatedBanner(true);
-      }
-    });
+    window.addEventListener('sync-tasks', handleSyncTasks);
+    window.addEventListener('sync-projects', handleSyncGeneral);
+    window.addEventListener('sync-metrics', handleSyncGeneral);
 
     return () => {
-      socket.disconnect();
+      window.removeEventListener('sync-tasks', handleSyncTasks);
+      window.removeEventListener('sync-projects', handleSyncGeneral);
+      window.removeEventListener('sync-metrics', handleSyncGeneral);
     };
-  }, [user, token]);
+  }, []);
 
   const today = new Date().toDateString();
   const yesterday = new Date(Date.now() - 86400000).toDateString();
@@ -371,6 +367,7 @@ export const EmployeeDashboard: React.FC = () => {
         for (const p of t.projects) {
           flat.push({
             ...t,
+            taskId: t.id,
             projectId: p.projectId,
             project: p.project,
             taskProjectId: p.id,
@@ -421,7 +418,8 @@ export const EmployeeDashboard: React.FC = () => {
 
   const filteredTasks = useMemo(() => {
     let filtered = flattenedTasks;
-    if (activeTab === 'COMPLETED') filtered = filtered.filter(t => t.status === 'COMPLETED');
+    if (activeTab === 'YESTERDAY') filtered = filtered.filter(t => new Date(t.startDate).toDateString() === yesterday);
+    else if (activeTab === 'COMPLETED') filtered = filtered.filter(t => t.status === 'COMPLETED');
     else if (activeTab === 'IN_PROGRESS') filtered = filtered.filter(t => t.status === 'IN_PROGRESS');
     else if (activeTab === 'DELAYED') filtered = filtered.filter(t => t.status === 'DELAYED');
     else if (activeTab === 'PENDING') filtered = filtered.filter(t => t.status === 'PENDING');
@@ -436,7 +434,26 @@ export const EmployeeDashboard: React.FC = () => {
       filtered = filtered.filter(t => t.projectId.toString() === filterProject);
     }
     return filtered;
-  }, [flattenedTasks, activeTab, searchQuery, filterProject]);
+  }, [flattenedTasks, activeTab, searchQuery, filterProject, yesterday]);
+
+  const groupedTasks = useMemo(() => {
+    const sorted = [...filteredTasks].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    const groups: { dateStr: string, displayDate: string, tasks: any[] }[] = [];
+    sorted.forEach(t => {
+      const dStr = new Date(t.startDate).toDateString();
+      let group = groups.find(g => g.dateStr === dStr);
+      if (!group) {
+        group = {
+          dateStr: dStr,
+          displayDate: new Date(t.startDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+          tasks: []
+        };
+        groups.push(group);
+      }
+      group.tasks.push(t);
+    });
+    return groups;
+  }, [filteredTasks]);
 
   const tabs: { id: TabType, label: string }[] = [
     { id: 'TODAY', label: "Today's Task" },
@@ -632,233 +649,150 @@ export const EmployeeDashboard: React.FC = () => {
                 </div>
               )}
             </div>
-          )}
-
-          {/* YESTERDAY'S TASK VIEW */}
-          {activeTab === 'YESTERDAY' && (
+          )}          {/* LIST VIEWS */}
+          {['YESTERDAY', 'ALL', 'COMPLETED', 'IN_PROGRESS', 'DELAYED', 'PENDING'].includes(activeTab) && (
             <div className="p-6">
-              {!yesterdayTask ? (
-                <div className="text-center py-16 text-slate-500">No task was logged yesterday.</div>
-              ) : (
-                <div className="max-w-4xl mx-auto space-y-6">
-                  {yesterdayTask.projects?.some((p: any) => ['IN_PROGRESS', 'DELAYED', 'BLOCKED'].includes(p.status)) && !yesterdayTask.carryForwardedTo && (
-                    <div className="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50 flex items-start gap-4">
-                      <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
-                      <div className="flex-1">
-                        <h4 className="font-bold text-amber-800 mb-1">Carry Forward Task</h4>
-                        <p className="text-sm text-amber-700 mb-4">Would you like to continue yesterday's incomplete projects today?</p>
-                        <div className="flex gap-3">
-                          <button onClick={() => handleCarryForward(yesterdayTask.id, true)} className="px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700">
-                            Carry Forward
-                          </button>
-                          <button onClick={() => handleCarryForward(yesterdayTask.id, false)} className="px-4 py-2 bg-white text-amber-800 border border-amber-200 text-xs font-bold rounded-lg hover:bg-amber-100">
-                            Ignore
-                          </button>
-                        </div>
-                      </div>
+              {/* Carry Forward banner for YESTERDAY */}
+              {activeTab === 'YESTERDAY' && yesterdayTask && yesterdayTask.projects?.some((p: any) => ['IN_PROGRESS', 'DELAYED', 'BLOCKED'].includes(p.status)) && !yesterdayTask.carryForwardedTo && (
+                <div className="mb-6 p-4 rounded-xl border border-amber-200 bg-amber-50 flex items-start gap-4 max-w-4xl mx-auto shadow-sm animate-in fade-in slide-in-from-top-4 duration-300">
+                  <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+                  <div className="flex-1">
+                    <h4 className="font-bold text-amber-800 mb-1">Carry Forward Task</h4>
+                    <p className="text-sm text-amber-700 mb-4">Would you like to continue yesterday's incomplete projects today?</p>
+                    <div className="flex gap-3">
+                      <button onClick={() => handleCarryForward(yesterdayTask.id, true)} className="px-4 py-2 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700 cursor-pointer">
+                        Carry Forward
+                      </button>
+                      <button onClick={() => handleCarryForward(yesterdayTask.id, false)} className="px-4 py-2 bg-white text-amber-800 border border-amber-200 text-xs font-bold rounded-lg hover:bg-amber-100 cursor-pointer">
+                        Ignore
+                      </button>
                     </div>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {yesterdayTask.projects?.map((p: any) => {
-                      const isNewByAdmin = p.createdAt && yesterdayTask.createdAt && (new Date(p.createdAt).getTime() - new Date(yesterdayTask.createdAt).getTime() > 60000);
-                      const isEditedByAdmin = p.changesSummary || p.changesGivenBy || p.adminEditedDescription;
-                      
-                      return (
-                      <div key={p.id} className={`border rounded-2xl p-5 shadow-sm relative overflow-hidden ${isNewByAdmin ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 bg-white'}`}>
-                        <div className={`absolute top-0 left-0 w-1 h-full ${isNewByAdmin ? 'bg-amber-400' : p.status === 'COMPLETED' ? 'bg-emerald-500' : p.status === 'IN_PROGRESS' ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
-                        <div className="flex justify-between items-start mb-4">
-                          <div className="flex flex-col items-start gap-2">
-                            <span className={`inline-block px-3 py-1 text-[10px] font-extrabold uppercase rounded-full ${isNewByAdmin ? 'bg-amber-200 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
-                              {p.project?.name}
-                            </span>
-                          </div>
-                          <div className="flex flex-col items-end gap-1.5">
-                            {(isNewByAdmin || isEditedByAdmin) && (
-                              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded uppercase ${isNewByAdmin ? 'text-amber-700 bg-amber-100' : 'text-indigo-600 bg-indigo-100'}`}>
-                                Admin Update
-                              </span>
-                            )}
-                            {p.acceptanceStatus === 'PENDING' ? (
-                              <div className="flex gap-1.5 mt-1">
-                                <button onClick={() => handleAcceptTask(yesterdayTask.id)} className="px-2 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded text-[9px] uppercase font-extrabold flex-1">Accept</button>
-                                <button onClick={() => setRejectingTask({ ...p, taskId: yesterdayTask.id })} className="px-2 py-1 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded text-[9px] uppercase font-extrabold flex-1">Reject</button>
-                              </div>
-                            ) : p.acceptanceStatus === 'REJECTED' ? (
-                              <div className="flex flex-col items-end gap-1">
-                                <span className="px-2 py-1 border rounded-lg text-[10px] font-bold bg-rose-50 text-rose-700 border-rose-200">
-                                  REJECTED
-                                </span>
-                                {p.rejectionReason && (
-                                  <span className="text-[9px] text-rose-600 font-bold bg-white px-1.5 py-0.5 rounded border border-rose-100 max-w-[120px] truncate" title={p.rejectionReason}>
-                                    {p.rejectionReason}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className={`px-2 py-1 border rounded-lg text-[10px] font-bold ${
-                                p.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                p.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                                'bg-slate-50 text-slate-600 border-slate-200'
-                              }`}>
-                                {p.status}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <h4 className="font-semibold text-slate-800 text-sm mb-3">
-                          {p.taskDescription}
-                          {p.changesSummary && <span className="text-indigo-600 font-bold ml-1.5">{p.changesSummary}</span>}
-                        </h4>
-                        
-                        {p.changesGivenBy && (
-                          <div className="text-[10px] text-slate-500 mb-2 font-medium">
-                            <span className="font-bold text-slate-400">Changes By:</span> {p.changesGivenBy}
-                          </div>
-                        )}
-
-                        {p.delayReason && (
-                          <div className="mt-3 p-3 bg-rose-50 border border-rose-100 rounded-lg text-rose-800 text-xs">
-                            <span className="font-bold block mb-1">Delay Reason:</span> {p.delayReason}
-                          </div>
-                        )}
-
-                        {p.completedWorkDescription && (
-                          <div className="mt-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-xs">
-                            <span className="font-bold block mb-1">Completed Work Description:</span> {p.completedWorkDescription}
-                          </div>
-                        )}
-
-                        {p.updates?.find((u: any) => u.screenshotUrl)?.screenshotUrl && (
-                          <div className="mt-2 text-xs">
-                            <a href={`http://localhost:3000/${p.updates.find((u: any) => u.screenshotUrl).screenshotUrl}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-1">
-                              View Work Done Proof
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                      );
-                    })}
                   </div>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* LIST VIEWS */}
-          {['ALL', 'COMPLETED', 'IN_PROGRESS', 'DELAYED', 'PENDING'].includes(activeTab) && (
-            <div className="p-6">
-              {activeTab === 'ALL' && (
-                <div className="flex gap-4 mb-6">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                    <input
-                      type="text"
-                      placeholder="Search tasks..."
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    />
-                  </div>
-                  <select 
-                    value={filterProject}
-                    onChange={e => setFilterProject(e.target.value)}
-                    className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none"
-                  >
-                    <option value="">All Projects</option>
-                    {projects.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
+              {/* Filters shown for list views */}
+              <div className="flex gap-4 mb-6">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    type="text"
+                    placeholder="Search tasks..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm"
+                  />
                 </div>
-              )}
+                <select 
+                  value={filterProject}
+                  onChange={e => setFilterProject(e.target.value)}
+                  className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none shadow-sm min-w-[150px]"
+                >
+                  <option value="">All Projects</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
 
-              <div className="max-h-[75vh] overflow-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 z-20 bg-slate-200 outline outline-1 outline-slate-400 shadow-sm">
-                    <tr className="bg-slate-200 divide-x divide-slate-400">
-                      <th className="sticky left-0 z-30 bg-slate-200 w-[100px] min-w-[100px] max-w-[100px] px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider outline outline-1 outline-slate-400 shadow-sm">Date</th>
-                      <th className="sticky left-[100px] z-30 bg-slate-200 w-[150px] min-w-[150px] max-w-[150px] px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider outline outline-1 outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Project</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Task Description</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Completion</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Work Done Proof</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Start Time</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Expected End</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Delay (Y/N)</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[150px]">Delay Reason</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Extra Note</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Reject Reason</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider text-right">Status</th>
+              <div className="max-h-[75vh] overflow-auto rounded-2xl border border-slate-200 shadow-sm bg-white">
+                <table className="w-full text-left border-collapse min-w-max">
+                  <thead className="sticky top-0 z-20 bg-purple-600 outline outline-1 outline-purple-700 shadow-sm">
+                    <tr className="bg-purple-600 divide-x divide-purple-500">
+                      <th className="md:sticky md:left-0 md:z-30 bg-purple-600 w-[100px] min-w-[100px] max-w-[100px] px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider md:outline md:outline-1 md:outline-purple-700 shadow-sm">Date</th>
+                      <th className="md:sticky md:left-[100px] md:z-30 bg-purple-600 w-[150px] min-w-[150px] max-w-[150px] px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider md:outline md:outline-1 md:outline-purple-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Project</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[200px]">Task Description</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Completion</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Work Done Proof</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Start Time</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Expected End</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Delay (Y/N)</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[150px]">Delay Reason</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[200px]">Extra Note</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[200px]">Reject Reason</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider text-right">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-400">
                     {filteredTasks.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="text-center py-12 text-slate-500 text-sm">No tasks found matching criteria.</td>
+                        <td colSpan={12} className="text-center py-12 text-slate-500 text-sm bg-white">
+                          {activeTab === 'YESTERDAY' ? 'No task was logged yesterday.' : 'No tasks found matching criteria.'}
+                        </td>
                       </tr>
                     ) : (
-                      filteredTasks.map((t, idx) => (
-                        <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
-                          <td className="sticky left-0 z-10 bg-white w-[100px] min-w-[100px] max-w-[100px] px-3 py-2.5 text-sm text-slate-500 font-medium whitespace-nowrap outline outline-1 outline-slate-400">{new Date(t.startDate).toLocaleDateString()}</td>
-                          <td className="sticky left-[100px] z-10 bg-white w-[150px] min-w-[150px] max-w-[150px] px-3 py-2.5 text-sm text-indigo-700 font-bold whitespace-nowrap outline outline-1 outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">{t.project?.name}</td>
-                          <td className="px-3 py-2.5 text-sm text-slate-700 leading-relaxed whitespace-normal min-w-[200px]">
-                            {t.taskDescription}
-                            {t.changesSummary && <span className="text-indigo-600 font-bold ml-1.5 block mt-1">{t.changesSummary}</span>}
-                          </td>
-                          <td className="px-3 py-2.5 text-sm text-slate-700 font-bold whitespace-nowrap">{t.completionPercentage || 0}%</td>
-                          <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
-                            {t.screenshotUrl ? (
-                              <a href={`http://localhost:3000/${t.screenshotUrl}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-semibold bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 inline-block">
-                                View
-                              </a>
-                            ) : <span className="text-slate-300">-</span>}
-                          </td>
-                          <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.startTime}</td>
-                          <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
-                            {new Date(t.expectedEndDate).toLocaleDateString()}
-                          </td>
-                          <td className="px-3 py-2.5 text-xs font-bold text-slate-700 whitespace-nowrap">
-                            {t.status === 'DELAYED' ? <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100">Yes</span> : <span className="text-slate-400">No</span>}
-                          </td>
-                          <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
-                            {t.delayReason || <span className="text-slate-300">-</span>}
-                          </td>
-                          <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[200px]">
-                            {t.completedWorkDescription ? (
-                              <div><strong className="text-emerald-700 block mb-1">Work:</strong> {t.completedWorkDescription}</div>
-                            ) : t.blockedReason ? (
-                              <div><strong className="text-rose-700 block mb-1">Blocked:</strong> {t.blockedReason}</div>
-                            ) : t.notes ? (
-                              <div><strong className="text-slate-600 block mb-1">Note:</strong> {t.notes}</div>
-                            ) : <span className="text-slate-300">-</span>}
-                          </td>
-                          <td className="px-3 py-2.5 text-xs text-rose-600 whitespace-normal leading-relaxed font-medium min-w-[200px]">
-                            {t.acceptanceStatus === 'REJECTED' ? t.rejectionReason : <span className="text-slate-300">-</span>}
-                          </td>
-                          <td className="px-3 py-2.5 text-xs font-bold text-right whitespace-nowrap">
-                            {t.acceptanceStatus === 'PENDING' ? (
-                              <div className="flex flex-col gap-1.5 items-end">
-                                <button onClick={() => handleAcceptTask(t.taskId)} className="px-3 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg text-[10px] uppercase font-extrabold w-full text-center">Accept</button>
-                                <button onClick={() => setRejectingTask(t)} className="px-3 py-1 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-lg text-[10px] uppercase font-extrabold w-full text-center">Reject</button>
+                      groupedTasks.map(group => (
+                        <React.Fragment key={group.dateStr}>
+                          <tr className="bg-emerald-400 border-y border-emerald-700">
+                            <td colSpan={12} className="sticky left-0 z-20 bg-emerald-400 p-0 text-xs font-bold text-white text-left uppercase tracking-wider">
+                              <div className="sticky left-4 px-3 py-3 inline-block">
+                                {group.displayDate}
                               </div>
-                            ) : t.acceptanceStatus === 'REJECTED' ? (
-                              <span className="px-3 py-1.5 rounded-lg border inline-block bg-rose-50 text-rose-700 border-rose-200">
-                                REJECTED
-                              </span>
-                            ) : (
-                              <span className={`px-3 py-1.5 rounded-lg border inline-block ${
-                                t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                t.status === 'DELAYED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                                t.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                                t.status === 'BLOCKED' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                                'bg-amber-50 text-amber-700 border-amber-200'
-                              }`}>
-                                {t.status.replace('_', ' ')}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
+                            </td>
+                          </tr>
+                          {group.tasks.map((t, idx) => (
+                            <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400 bg-white">
+                              <td className="md:sticky md:left-0 md:z-10 bg-white w-[100px] min-w-[100px] max-w-[100px] px-3 py-2.5 text-sm text-slate-500 font-medium whitespace-nowrap md:outline md:outline-1 md:outline-slate-400">{new Date(t.startDate).toLocaleDateString()}</td>
+                              <td className="md:sticky md:left-[100px] md:z-10 bg-white w-[150px] min-w-[150px] max-w-[150px] px-3 py-2.5 text-sm text-indigo-700 font-bold whitespace-nowrap md:outline md:outline-1 md:outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">{t.project?.name}</td>
+                              <td className="px-3 py-2.5 text-sm text-slate-700 leading-relaxed whitespace-normal min-w-[200px]">
+                                {t.taskDescription}
+                                {t.changesSummary && <span className="text-indigo-600 font-bold ml-1.5 block mt-1">{t.changesSummary}</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-sm text-slate-700 font-bold whitespace-nowrap">{t.completionPercentage || 0}%</td>
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
+                                {t.screenshotUrl ? (
+                                  <a href={`http://localhost:3000/${t.screenshotUrl}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-semibold bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 inline-block">
+                                    View
+                                  </a>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.startTime}</td>
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
+                                {new Date(t.expectedEndDate).toLocaleDateString()}
+                              </td>
+                              <td className="px-3 py-2.5 text-xs font-bold text-slate-700 whitespace-nowrap">
+                                {t.status === 'DELAYED' ? <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100">Yes</span> : <span className="text-slate-400">No</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
+                                {t.delayReason || <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[200px]">
+                                {t.completedWorkDescription ? (
+                                  <div><strong className="text-emerald-700 block mb-1">Work:</strong> {t.completedWorkDescription}</div>
+                                ) : t.blockedReason ? (
+                                  <div><strong className="text-rose-700 block mb-1">Blocked:</strong> {t.blockedReason}</div>
+                                ) : t.notes ? (
+                                  <div><strong className="text-slate-600 block mb-1">Note:</strong> {t.notes}</div>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-xs text-rose-600 whitespace-normal leading-relaxed font-medium min-w-[200px]">
+                                {t.acceptanceStatus === 'REJECTED' ? t.rejectionReason : <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-xs font-bold text-right whitespace-nowrap">
+                                {t.acceptanceStatus === 'PENDING' ? (
+                                  <div className="flex flex-col gap-1.5 items-end">
+                                    <button onClick={() => handleAcceptTask(t.taskId)} className="px-3 py-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg text-[10px] uppercase font-extrabold w-full text-center cursor-pointer">Accept</button>
+                                    <button onClick={() => setRejectingTask(t)} className="px-3 py-1 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-lg text-[10px] uppercase font-extrabold w-full text-center cursor-pointer">Reject</button>
+                                  </div>
+                                ) : t.acceptanceStatus === 'REJECTED' ? (
+                                  <span className="px-3 py-1.5 rounded-lg border inline-block bg-rose-50 text-rose-700 border-rose-200">
+                                    REJECTED
+                                  </span>
+                                ) : (
+                                  <span className={`px-3 py-1.5 rounded-lg border inline-block ${
+                                    t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                    t.status === 'DELAYED' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                    t.status === 'IN_PROGRESS' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                    t.status === 'BLOCKED' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                                    'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
+                                    {t.status.replace('_', ' ')}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </React.Fragment>
                       ))
                     )}
                   </tbody>

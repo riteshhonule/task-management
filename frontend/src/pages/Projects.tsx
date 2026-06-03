@@ -44,6 +44,21 @@ export const Projects: React.FC = () => {
   useEffect(() => {
     fetchProjects();
     fetchUsers();
+
+    const handleSyncProjects = () => {
+      fetchProjects();
+    };
+    const handleSyncUsers = () => {
+      fetchUsers();
+    };
+
+    window.addEventListener('sync-projects', handleSyncProjects);
+    window.addEventListener('sync-users', handleSyncUsers);
+
+    return () => {
+      window.removeEventListener('sync-projects', handleSyncProjects);
+      window.removeEventListener('sync-users', handleSyncUsers);
+    };
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {

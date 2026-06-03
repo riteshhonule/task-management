@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { notificationsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Check, CheckCheck, Loader2 } from 'lucide-react';
@@ -14,6 +14,10 @@ export const NotificationCenterBase: React.FC<Props> = ({ isDrawer = false }) =>
   
   const [sentNotifications, setSentNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const openTimeRef = useRef<number>(Date.now());
+  const timersRef = useRef<Map<number, any>>(new Map());
 
   const loadSent = async () => {
     try {
@@ -33,6 +37,8 @@ export const NotificationCenterBase: React.FC<Props> = ({ isDrawer = false }) =>
     };
     initLoad();
   }, []);
+
+
 
   // Set up socket listener for live status updates on Sent tab
   useEffect(() => {
@@ -111,6 +117,88 @@ export const NotificationCenterBase: React.FC<Props> = ({ isDrawer = false }) =>
     return groupedSentNotifications.filter(n => isToday(n.createdAt));
   }, [groupedSentNotifications]);
 
+  // Automatically track visibility of unread notifications inside viewport
+  useEffect(() => {
+    if (activeTab !== 'receive' || loading) return;
+
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    const callback = (entries: IntersectionObserverEntry[]) => {
+      entries.forEach(entry => {
+        const idAttr = entry.target.getAttribute('data-id');
+        if (!idAttr) return;
+        const notificationId = parseInt(idAttr, 10);
+        
+        const notification = todayReceivedNotifications.find(n => n.id === notificationId);
+        if (!notification || notification.isRead) {
+          observer.unobserve(entry.target);
+          return;
+        }
+
+        // Check if fully visible
+        if (entry.isIntersecting && entry.intersectionRatio === 1) {
+          if (!timersRef.current.has(notificationId)) {
+            const timer = setTimeout(() => {
+              const elapsed = Date.now() - openTimeRef.current;
+              
+              const commitRead = async () => {
+                try {
+                  await handleMarkAsRead(notificationId);
+                  observer.unobserve(entry.target);
+                } catch (err) {
+                  console.error('Failed to mark visible notification as read', err);
+                }
+              };
+
+              if (elapsed >= 3000) {
+                commitRead();
+              } else {
+                const remaining = 3000 - elapsed;
+                const delayTimer = setTimeout(() => {
+                  commitRead();
+                }, remaining);
+                timersRef.current.set(notificationId, delayTimer);
+              }
+            }, 2000);
+            
+            timersRef.current.set(notificationId, timer);
+          }
+        } else {
+          // If partially hidden or scrolled away, cancel the timer
+          const existingTimer = timersRef.current.get(notificationId);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+            timersRef.current.delete(notificationId);
+          }
+        }
+      });
+    };
+
+    const observer = new IntersectionObserver(callback, {
+      root: scrollContainer,
+      threshold: 1.0,
+    });
+
+    const cards = scrollContainer.querySelectorAll('.notification-card');
+    cards.forEach(card => {
+      const idAttr = card.getAttribute('data-id');
+      if (idAttr) {
+        const nId = parseInt(idAttr, 10);
+        const notification = todayReceivedNotifications.find(n => n.id === nId);
+        if (notification && !notification.isRead) {
+          observer.observe(card);
+        }
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+      timersRef.current.forEach(timer => clearTimeout(timer));
+      timersRef.current.clear();
+    };
+  }, [activeTab, todayReceivedNotifications, loading]);
+
   const containerClasses = isDrawer 
     ? 'flex flex-col h-full bg-slate-50' 
     : 'bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden';
@@ -146,7 +234,7 @@ export const NotificationCenterBase: React.FC<Props> = ({ isDrawer = false }) =>
           <Loader2 size={24} className="animate-spin" />
         </div>
       ) : (
-        <div className={`flex-1 overflow-y-auto p-4 sm:p-6 ${isDrawer ? 'bg-slate-50' : 'bg-slate-50 min-h-[500px]'}`}>
+        <div ref={scrollContainerRef} className={`flex-1 overflow-y-auto p-4 sm:p-6 ${isDrawer ? 'bg-slate-50' : 'bg-slate-50 min-h-[500px]'}`}>
           {activeTab === 'receive' && (
             <div className="space-y-4">
               {todayReceivedNotifications.length === 0 ? (
@@ -155,7 +243,8 @@ export const NotificationCenterBase: React.FC<Props> = ({ isDrawer = false }) =>
                 todayReceivedNotifications.map((n) => (
                   <div
                     key={n.id}
-                    className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                    data-id={n.id}
+                    className={`notification-card p-4 rounded-xl border transition-all cursor-pointer ${
                       n.isRead ? 'bg-white border-slate-200' : 'bg-indigo-50 border-indigo-200 shadow-sm'
                     }`}
                     onClick={() => !n.isRead && handleMarkAsRead(n.id)}

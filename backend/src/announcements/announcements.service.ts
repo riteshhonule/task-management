@@ -78,6 +78,8 @@ export class AnnouncementsService {
       },
     });
 
+    this.notificationsService.broadcastEvent('announcement_updated', { action: 'acknowledge', announcementId: id });
+
     return { message: 'Announcement acknowledged successfully' };
   }
 
@@ -110,9 +112,13 @@ export class AnnouncementsService {
       throw new NotFoundException('Announcement not found');
     }
 
-    return this.prisma.announcement.update({
+    const deleted = await this.prisma.announcement.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
+
+    this.notificationsService.broadcastEvent('announcement_updated', { action: 'delete', announcementId: id });
+
+    return deleted;
   }
 }

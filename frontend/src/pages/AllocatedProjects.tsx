@@ -21,6 +21,16 @@ export const AllocatedProjects: React.FC = () => {
 
   useEffect(() => {
     fetchAllocations();
+
+    const handleSyncProjects = () => {
+      fetchAllocations();
+    };
+
+    window.addEventListener('sync-projects', handleSyncProjects);
+
+    return () => {
+      window.removeEventListener('sync-projects', handleSyncProjects);
+    };
   }, []);
 
   const handleAccept = async (id: number) => {

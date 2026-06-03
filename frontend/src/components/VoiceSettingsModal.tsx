@@ -34,7 +34,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({ onClose 
   };
 
   return (
-    <div className="absolute right-0 mt-3 w-80 rounded-xl bg-white border border-slate-200 shadow-2xl p-5 z-50 animate-in fade-in duration-200">
+    <div className="fixed left-1/2 -translate-x-1/2 top-16 w-[calc(100vw-2rem)] max-w-sm sm:absolute sm:left-auto sm:right-0 sm:translate-x-0 sm:top-auto sm:mt-3 sm:w-80 rounded-xl bg-white border border-slate-200 shadow-2xl p-5 z-50 animate-in fade-in sm:zoom-in-95 duration-200">
       <div className="flex items-center justify-between mb-5 border-b border-slate-100 pb-3">
         <div className="flex items-center gap-2">
           <Volume2 className="text-indigo-600" size={16} />

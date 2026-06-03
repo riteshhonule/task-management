@@ -3,7 +3,7 @@ import { IsEmail, IsEnum, IsNotEmpty, IsString, MinLength, IsOptional } from 'cl
 import { Role } from '@prisma/client';
 
 export class CreateUserDto {
-  @ApiProperty({ example: 'employee@company.com' })
+  @ApiProperty({ example: 'employee@gmark.com' })
   @IsEmail()
   @IsNotEmpty()
   email: string;

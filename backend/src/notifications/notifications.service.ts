@@ -47,6 +47,10 @@ export class NotificationsService {
     this.gateway.sendToUser(userId, 'new_message', message);
   }
 
+  broadcastEvent(event: string, data: any) {
+    this.gateway.broadcast(event, data);
+  }
+
   async broadcastNotification(type: string, title: string, message: string) {
     // Get all active users to create notifications in DB
     const users = await this.prisma.user.findMany({
@@ -136,7 +140,7 @@ export class NotificationsService {
 
     const updated = await this.prisma.notification.update({
       where: { id },
-      data: { isRead: true, readAt: new Date(), status: 'SEEN' },
+      data: { isRead: true, readAt: new Date(), seenAt: new Date(), status: 'SEEN' },
     });
 
     if (updated.senderId) {
@@ -154,7 +158,7 @@ export class NotificationsService {
   async markAllAsRead(userId: number) {
     return this.prisma.notification.updateMany({
       where: { userId, isRead: false },
-      data: { isRead: true },
+      data: { isRead: true, readAt: new Date(), seenAt: new Date(), status: 'SEEN' },
     });
   }
 }

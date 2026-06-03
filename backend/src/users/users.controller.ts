@@ -1,11 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, ParseIntPipe, ForbiddenException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { Role } from '@prisma/client';
+import { Role, User } from '@prisma/client';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('users')
@@ -50,9 +51,19 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Update user details (Admin/SuperAdmin only)' })
-  update(@Param('id', ParseIntPipe) id: number, @Body() updateUserDto: UpdateUserDto) {
+  @ApiOperation({ summary: 'Update user details (Admins or user updating their own profile)' })
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateUserDto: UpdateUserDto,
+    @CurrentUser() currentUser: User,
+  ) {
+    if (currentUser.role !== Role.ADMIN && currentUser.role !== Role.SUPER_ADMIN && currentUser.id !== id) {
+      throw new ForbiddenException('You can only update your own profile details');
+    }
+    // Prevent non-admin users from changing their own role
+    if (currentUser.role !== Role.ADMIN && currentUser.role !== Role.SUPER_ADMIN) {
+      delete updateUserDto.role;
+    }
     return this.usersService.update(id, updateUserDto);
   }
 

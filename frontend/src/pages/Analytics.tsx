@@ -37,6 +37,20 @@ export const Analytics: React.FC = () => {
 
   useEffect(() => {
     loadAnalytics();
+
+    const handleSync = () => {
+      loadAnalytics();
+    };
+
+    window.addEventListener('sync-tasks', handleSync);
+    window.addEventListener('sync-projects', handleSync);
+    window.addEventListener('sync-metrics', handleSync);
+
+    return () => {
+      window.removeEventListener('sync-tasks', handleSync);
+      window.removeEventListener('sync-projects', handleSync);
+      window.removeEventListener('sync-metrics', handleSync);
+    };
   }, []);
 
   if (loading) {
@@ -108,8 +122,8 @@ export const Analytics: React.FC = () => {
           <h3 className="font-heading font-bold text-slate-850 text-sm flex items-center gap-2">
             <PieIcon size={16} className="text-amber-500" /> Tasks Status Distribution
           </h3>
-          <div className="h-72 w-full text-xs flex flex-col sm:flex-row items-center justify-around gap-4">
-            <div className="h-60 w-60 shrink-0">
+          <div className="h-auto sm:h-72 min-h-[18rem] w-full text-xs flex flex-col sm:flex-row items-center justify-around gap-4 py-2">
+            <div className="h-48 w-48 sm:h-60 sm:w-60 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -149,7 +163,7 @@ export const Analytics: React.FC = () => {
             <Users size={16} className="text-indigo-600" /> Employee Performance Rankings
           </h3>
           
-          <div className="border border-slate-200 bg-slate-50 text-xs">
+          <div className="border border-slate-200 bg-slate-50 text-xs overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-100/80 text-[10px] font-bold text-slate-550 uppercase tracking-widest">

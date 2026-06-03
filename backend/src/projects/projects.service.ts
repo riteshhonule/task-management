@@ -59,6 +59,7 @@ export class ProjectsService {
       }
     }
 
+    this.notificationsService.broadcastEvent('project_updated', { action: 'create', projectId: project.id });
     return project;
   }
 
@@ -140,6 +141,7 @@ export class ProjectsService {
       });
     }
 
+    this.notificationsService.broadcastEvent('project_updated', { action: 'acceptAllocation', allocationId });
     return updated;
   }
 
@@ -191,14 +193,17 @@ export class ProjectsService {
       }
     }
 
+    this.notificationsService.broadcastEvent('project_updated', { action: 'update', projectId: updated.id });
     return updated;
   }
 
   async remove(id: number) {
     await this.findOne(id);
-    return this.prisma.project.update({
+    const deleted = await this.prisma.project.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
+    this.notificationsService.broadcastEvent('project_updated', { action: 'delete', projectId: id });
+    return deleted;
   }
 }

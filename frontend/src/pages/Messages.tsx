@@ -46,6 +46,18 @@ export const Messages: React.FC = () => {
 
   useEffect(() => {
     loadData();
+
+    const handleSyncMessages = () => {
+      loadData();
+    };
+
+    window.addEventListener('sync-messages', handleSyncMessages);
+    window.addEventListener('sync-new-message', handleSyncMessages);
+
+    return () => {
+      window.removeEventListener('sync-messages', handleSyncMessages);
+      window.removeEventListener('sync-new-message', handleSyncMessages);
+    };
   }, []);
 
   const handleBroadcast = async (e: React.FormEvent) => {

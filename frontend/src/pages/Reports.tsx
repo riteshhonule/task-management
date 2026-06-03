@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { tasksApi, projectsApi, usersApi } from '../services/api';
-import { FileSpreadsheet, FileText, Search, Loader2, Calendar, Plus, X, CheckSquare } from 'lucide-react';
+import { tasksApi, projectsApi, usersApi, API_URL } from '../services/api';
+import { FileSpreadsheet, Search, Loader2, Calendar, Plus, X, CheckSquare } from 'lucide-react';
 
 type TabType = 'TODAY' | 'YESTERDAY' | 'ALL' | 'COMPLETED' | 'IN_PROGRESS' | 'DELAYED' | 'PENDING';
 
@@ -59,7 +59,7 @@ export const Reports: React.FC = () => {
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!employeeId || selectedProjects.length === 0 || !expectedEndDate) return;
-    
+
     for (const pid of selectedProjects) {
       if (!projectDetails[pid]?.taskDescription) {
         alert('Please provide a task description for all selected projects.');
@@ -124,6 +124,8 @@ export const Reports: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterProject, setFilterProject] = useState('');
   const [filterDate, setFilterDate] = useState('');
+  const [filterMonth, setFilterMonth] = useState('');
+  const [filterYear, setFilterYear] = useState('');
 
   const fetchDashboardData = async () => {
     try {
@@ -133,7 +135,7 @@ export const Reports: React.FC = () => {
         projectsApi.list(),
         usersApi.list({ role: 'EMPLOYEE' }),
       ]);
-      
+
       // Flatten multi-project tasks
       const flatTasks: any[] = [];
       if (tasksRes.data && Array.isArray(tasksRes.data)) {
@@ -167,6 +169,20 @@ export const Reports: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
+
+    const handleSync = () => {
+      fetchDashboardData();
+    };
+
+    window.addEventListener('sync-tasks', handleSync);
+    window.addEventListener('sync-projects', handleSync);
+    window.addEventListener('sync-users', handleSync);
+
+    return () => {
+      window.removeEventListener('sync-tasks', handleSync);
+      window.removeEventListener('sync-projects', handleSync);
+      window.removeEventListener('sync-users', handleSync);
+    };
   }, []);
 
   useEffect(() => {
@@ -189,11 +205,11 @@ export const Reports: React.FC = () => {
 
     const existingTask = tasks.find(t => {
       if (t.employee?.id.toString() !== newEmployeeId) return false;
-      
+
       const tDate = new Date(t.startDate);
       const tzoffset = tDate.getTimezoneOffset() * 60000;
       const localISODate = new Date(tDate.getTime() - tzoffset).toISOString().split('T')[0];
-      
+
       return localISODate === newDate;
     });
 
@@ -212,7 +228,7 @@ export const Reports: React.FC = () => {
       } catch (e) {
         setExpectedEndDate('');
       }
-      
+
       const selProj: number[] = [];
       const projDetails: Record<number, any> = {};
       if (parentTask.projects) {
@@ -240,7 +256,7 @@ export const Reports: React.FC = () => {
   const handleEditInit = (parentTask: any) => {
     setEditTask(parentTask);
     setEmployeeId(parentTask.employee?.id?.toString() || '');
-    
+
     try {
       const d = new Date(parentTask.startDate);
       const tzoffset = d.getTimezoneOffset() * 60000;
@@ -248,9 +264,9 @@ export const Reports: React.FC = () => {
     } catch (e) {
       setStartDate(new Date().toISOString().split('T')[0]);
     }
-    
+
     setStartTime(parentTask.startTime || '09:00 AM');
-    
+
     try {
       if (parentTask.expectedEndDate) {
         const d = new Date(parentTask.expectedEndDate);
@@ -262,7 +278,7 @@ export const Reports: React.FC = () => {
     } catch (e) {
       setExpectedEndDate('');
     }
-    
+
     const selProj: number[] = [];
     const projDetails: Record<number, any> = {};
     if (parentTask.projects) {
@@ -283,12 +299,25 @@ export const Reports: React.FC = () => {
     setShowCreateModal(true);
   };
 
-  const handleExportExcel = () => {
-    window.open('http://localhost:3000/reports/export-excel', '_blank');
+  const getBackendDateParam = () => {
+    if (filterDate) return filterDate;
+    if (filterYear && filterMonth) return `${filterYear}-${filterMonth}`;
+    if (filterYear) return filterYear;
+    if (filterMonth) return `${new Date().getFullYear()}-${filterMonth}`;
+    return '';
   };
 
-  const handleExportPdf = () => {
-    window.open('http://localhost:3000/reports/export-pdf', '_blank');
+  const handleExportExcel = () => {
+    const params = new URLSearchParams();
+    if (activeTab) params.append('tab', activeTab);
+    const dateParam = getBackendDateParam();
+    if (dateParam) params.append('date', dateParam);
+    if (filterProject) params.append('projectId', filterProject);
+    if (searchQuery) params.append('search', searchQuery);
+    const token = localStorage.getItem('token');
+    if (token) params.append('token', token);
+
+    window.open(`${API_URL}/reports/export-excel?${params.toString()}`, '_blank');
   };
 
   const today = new Date().toDateString();
@@ -296,7 +325,7 @@ export const Reports: React.FC = () => {
 
   const filteredTasks = useMemo(() => {
     let filtered = tasks;
-    
+
     if (activeTab === 'TODAY') {
       filtered = filtered.filter(t => new Date(t.startDate).toDateString() === today);
     } else if (activeTab === 'YESTERDAY') {
@@ -310,10 +339,10 @@ export const Reports: React.FC = () => {
     } else if (activeTab === 'PENDING') {
       filtered = filtered.filter(t => t.status === 'PENDING');
     }
-    
+
     if (searchQuery) {
-      filtered = filtered.filter(t => 
-        (t.taskDescription || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+      filtered = filtered.filter(t =>
+        (t.taskDescription || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (t.project?.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (t.employee?.name || '').toLowerCase().includes(searchQuery.toLowerCase())
       );
@@ -329,22 +358,33 @@ export const Reports: React.FC = () => {
         const dd = String(d.getDate()).padStart(2, '0');
         return `${yyyy}-${mm}-${dd}` === filterDate;
       });
+    } else {
+      if (filterYear) {
+        filtered = filtered.filter(t => new Date(t.startDate).getFullYear().toString() === filterYear);
+      }
+      if (filterMonth) {
+        filtered = filtered.filter(t => {
+          const d = new Date(t.startDate);
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          return mm === filterMonth;
+        });
+      }
     }
     return filtered;
-  }, [tasks, activeTab, searchQuery, filterProject, filterDate, today, yesterday]);
+  }, [tasks, activeTab, searchQuery, filterProject, filterDate, filterMonth, filterYear, today, yesterday]);
 
   const groupedTasks = useMemo(() => {
     const sorted = [...filteredTasks].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
     const groups: { dateStr: string, displayDate: string, tasks: any[] }[] = [];
-    
+
     sorted.forEach(t => {
       const dStr = new Date(t.startDate).toDateString();
       let group = groups.find(g => g.dateStr === dStr);
       if (!group) {
-        group = { 
-          dateStr: dStr, 
-          displayDate: new Date(t.startDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }), 
-          tasks: [] 
+        group = {
+          dateStr: dStr,
+          displayDate: new Date(t.startDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+          tasks: []
         };
         groups.push(group);
       }
@@ -402,12 +442,6 @@ export const Reports: React.FC = () => {
           >
             <FileSpreadsheet size={15} /> Export Excel
           </button>
-          <button
-            onClick={handleExportPdf}
-            className="rounded-xl bg-rose-50 border border-rose-100 text-rose-700 hover:bg-rose-600 hover:text-white px-4 py-2.5 text-xs font-semibold transition-all flex items-center gap-1.5"
-          >
-            <FileText size={15} /> Export PDF
-          </button>
         </div>
       </div>
 
@@ -417,11 +451,10 @@ export const Reports: React.FC = () => {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-              activeTab === tab.id
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
+            className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${activeTab === tab.id
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
           >
             {tab.label}
           </button>
@@ -450,10 +483,50 @@ export const Reports: React.FC = () => {
               <input
                 type="date"
                 value={filterDate}
-                onChange={e => setFilterDate(e.target.value)}
+                onChange={e => {
+                  setFilterDate(e.target.value);
+                  setFilterMonth('');
+                  setFilterYear('');
+                }}
                 className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none shadow-sm text-slate-600"
               />
-              <select 
+              <select
+                value={filterMonth}
+                onChange={e => {
+                  setFilterMonth(e.target.value);
+                  setFilterDate('');
+                }}
+                className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none shadow-sm text-slate-600 min-w-[120px]"
+              >
+                <option value="">All Months</option>
+                <option value="01">January</option>
+                <option value="02">February</option>
+                <option value="03">March</option>
+                <option value="04">April</option>
+                <option value="05">May</option>
+                <option value="06">June</option>
+                <option value="07">July</option>
+                <option value="08">August</option>
+                <option value="09">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+              <select
+                value={filterYear}
+                onChange={e => {
+                  setFilterYear(e.target.value);
+                  setFilterDate('');
+                }}
+                className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none shadow-sm text-slate-600 min-w-[120px]"
+              >
+                <option value="">All Years</option>
+                <option value="2026">2026</option>
+                <option value="2025">2025</option>
+                <option value="2024">2024</option>
+                <option value="2023">2023</option>
+              </select>
+              <select
                 value={filterProject}
                 onChange={e => setFilterProject(e.target.value)}
                 className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none shadow-sm min-w-[150px]"
@@ -476,36 +549,38 @@ export const Reports: React.FC = () => {
             <div className="bg-white border border-slate-200 shadow-sm">
               <div className="max-h-[75vh] overflow-auto">
                 <table className="w-full text-left border-collapse min-w-max">
-                  <thead className="sticky top-0 z-20 bg-slate-200 outline outline-1 outline-slate-400 shadow-sm">
-                    <tr className="bg-slate-200 divide-x divide-slate-400">
-                      <th className="sticky left-0 z-30 bg-slate-200 w-[100px] min-w-[100px] max-w-[100px] px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider outline outline-1 outline-slate-400 shadow-sm">Date</th>
-                      <th className="sticky left-[100px] z-30 bg-slate-200 w-[150px] min-w-[150px] max-w-[150px] px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider outline outline-1 outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Employee Name</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Project</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[250px]">Task</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Completion</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Work Done Proof</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Start Time</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Expected End</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider">Delay (Y/N)</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Delay Reason</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[250px]">Extra Note</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider w-[200px]">Reject Reason</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider text-right">Status</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-slate-800 uppercase tracking-wider text-right">Action</th>
+                  <thead className="sticky top-0 z-20 bg-purple-600 outline outline-1 outline-purple-700 shadow-sm">
+                    <tr className="bg-purple-600 divide-x divide-purple-500">
+                      <th className="md:sticky md:left-0 md:z-30 bg-purple-600 w-[100px] min-w-[100px] max-w-[100px] px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider md:outline md:outline-1 md:outline-purple-700 shadow-sm">Date</th>
+                      <th className="md:sticky md:left-[100px] md:z-30 bg-purple-600 w-[150px] min-w-[150px] max-w-[150px] px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider md:outline md:outline-1 md:outline-purple-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Employee Name</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Project</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[250px]">Task</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Completion</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Work Done Proof</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Start Time</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Expected End</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Delay (Y/N)</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[200px]">Delay Reason</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[250px]">Extra Note</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[200px]">Reject Reason</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider text-right">Status</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-400">
                     {groupedTasks.map(group => (
                       <React.Fragment key={group.dateStr}>
-                        <tr className="bg-indigo-50/80 border-y border-indigo-100">
-                          <td colSpan={14} className="px-3 py-3 text-sm font-bold text-indigo-900 text-left uppercase tracking-widest shadow-inner">
-                            {group.displayDate}
+                        <tr className="bg-emerald-400 border-y border-emerald-700">
+                          <td colSpan={14} className="sticky left-0 z-20 bg-emerald-400 p-0 text-xs font-bold text-white text-left uppercase tracking-wider">
+                            <div className="sticky left-4 px-3 py-3 inline-block">
+                              {group.displayDate}
+                            </div>
                           </td>
                         </tr>
                         {group.tasks.map((t: any) => (
                           <tr key={t.id} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
-                            <td className="sticky left-0 z-10 bg-white w-[100px] min-w-[100px] max-w-[100px] px-3 py-2.5 text-xs text-slate-500 font-medium whitespace-nowrap outline outline-1 outline-slate-400">{new Date(t.startDate).toLocaleDateString()}</td>
-                            <td className="sticky left-[100px] z-10 bg-white w-[150px] min-w-[150px] max-w-[150px] px-3 py-2.5 text-xs font-bold text-slate-800 whitespace-nowrap outline outline-1 outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">{t.employee?.name || 'N/A'}</td>
+                            <td className="md:sticky md:left-0 md:z-10 bg-white w-[100px] min-w-[100px] max-w-[100px] px-3 py-2.5 text-xs text-slate-500 font-medium whitespace-nowrap md:outline md:outline-1 md:outline-slate-400">{new Date(t.startDate).toLocaleDateString()}</td>
+                            <td className="md:sticky md:left-[100px] md:z-10 bg-white w-[150px] min-w-[150px] max-w-[150px] px-3 py-2.5 text-xs font-bold text-slate-800 whitespace-nowrap md:outline md:outline-1 md:outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">{t.employee?.name || 'N/A'}</td>
                             <td className="px-3 py-2.5 text-xs text-indigo-700 font-bold whitespace-nowrap">{t.project?.name || 'N/A'}</td>
                             <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-normal leading-relaxed">
                               {t.changesGivenBy ? (
@@ -602,7 +677,7 @@ export const Reports: React.FC = () => {
                 <X size={20} />
               </button>
             </div>
-            
+
             <form onSubmit={handleCreateSubmit} className="space-y-6 text-left">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -698,21 +773,21 @@ export const Reports: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Task Description *</label>
-                          <textarea 
-                            value={projectDetails[pid]?.taskDescription || ''} 
-                            onChange={(e) => handleProjectDetailChange(pid, 'taskDescription', e.target.value)} 
-                            required 
-                            placeholder={`What needs to be done for ${project?.name}?`} 
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]" 
+                          <textarea
+                            value={projectDetails[pid]?.taskDescription || ''}
+                            onChange={(e) => handleProjectDetailChange(pid, 'taskDescription', e.target.value)}
+                            required
+                            placeholder={`What needs to be done for ${project?.name}?`}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]"
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
 
                           <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Priority</label>
-                            <select 
-                              value={projectDetails[pid]?.priority || 'MEDIUM'} 
-                              onChange={(e) => handleProjectDetailChange(pid, 'priority', e.target.value)} 
+                            <select
+                              value={projectDetails[pid]?.priority || 'MEDIUM'}
+                              onChange={(e) => handleProjectDetailChange(pid, 'priority', e.target.value)}
                               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
                             >
                               <option value="LOW">LOW</option>
@@ -722,21 +797,21 @@ export const Reports: React.FC = () => {
                           </div>
                           <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By</label>
-                            <input 
-                              type="text" 
-                              value={projectDetails[pid]?.changesGivenBy || ''} 
-                              onChange={(e) => handleProjectDetailChange(pid, 'changesGivenBy', e.target.value)} 
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" 
+                            <input
+                              type="text"
+                              value={projectDetails[pid]?.changesGivenBy || ''}
+                              onChange={(e) => handleProjectDetailChange(pid, 'changesGivenBy', e.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
                             />
                           </div>
                         </div>
                         <div className="mt-4">
                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Admin Instructions (Changes Summary)</label>
-                          <textarea 
-                            value={projectDetails[pid]?.changesSummary || ''} 
-                            onChange={(e) => handleProjectDetailChange(pid, 'changesSummary', e.target.value)} 
+                          <textarea
+                            value={projectDetails[pid]?.changesSummary || ''}
+                            onChange={(e) => handleProjectDetailChange(pid, 'changesSummary', e.target.value)}
                             placeholder="Detail any changes, instructions, or feedback for the employee here..."
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]" 
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]"
                           />
                         </div>
                       </div>

@@ -30,6 +30,22 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     loadData();
+
+    const handleSync = () => {
+      fetchMetrics();
+    };
+
+    window.addEventListener('sync-metrics', handleSync);
+    window.addEventListener('sync-tasks', handleSync);
+    window.addEventListener('sync-projects', handleSync);
+    window.addEventListener('sync-users', handleSync);
+
+    return () => {
+      window.removeEventListener('sync-metrics', handleSync);
+      window.removeEventListener('sync-tasks', handleSync);
+      window.removeEventListener('sync-projects', handleSync);
+      window.removeEventListener('sync-users', handleSync);
+    };
   }, []);
 
 

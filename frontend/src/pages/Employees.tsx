@@ -30,6 +30,16 @@ export const Employees: React.FC = () => {
 
   useEffect(() => {
     fetchUsers();
+
+    const handleSyncUsers = () => {
+      fetchUsers();
+    };
+
+    window.addEventListener('sync-users', handleSyncUsers);
+
+    return () => {
+      window.removeEventListener('sync-users', handleSyncUsers);
+    };
   }, []);
 
   const handleCreateUser = async (e: React.FormEvent) => {
@@ -147,7 +157,7 @@ export const Employees: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. jane@company.com"
+                  placeholder="e.g. jane@gmark.com"
                   required
                   className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
                 />
@@ -197,62 +207,62 @@ export const Employees: React.FC = () => {
 
       {/* Directory List */}
       <div className="bg-white border border-slate-200 p-6 space-y-4 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="font-heading font-bold text-slate-800 text-sm">Employee Directory</h3>
-              <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500 border border-slate-200 font-bold">
-                {users.length} Registered
-              </span>
-            </div>
+        <div>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <h3 className="font-heading font-bold text-slate-800 text-sm">Employee Directory</h3>
+            <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500 border border-slate-200 font-bold">
+              {users.length} Registered
+            </span>
+          </div>
 
-            <div className="border border-slate-200 mt-4">
-              <div className="max-h-[75vh] overflow-y-auto">
-                <table className="w-full border-collapse text-left">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-100/50 text-[13px] font-bold text-slate-500 uppercase tracking-widest sticky top-0 z-10">
-                      <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Name</th>
-                      <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Mobile Number</th>
-                      <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Email</th>
-                      <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Role</th>
-                      <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Created</th>
+          <div className="border border-slate-200 mt-4">
+            <div className="max-h-[75vh] overflow-y-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-100/50 text-[13px] font-bold text-slate-500 uppercase tracking-widest sticky top-0 z-10">
+                    <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Name</th>
+                    <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Mobile Number</th>
+                    <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Email</th>
+                    <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Role</th>
+                    <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Created</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-xs text-slate-700 bg-white">
+                  {loading ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-2.5 text-center align-middle">
+                        <Loader2 size={20} className="animate-spin text-indigo-500 mx-auto" />
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 text-xs text-slate-700 bg-white">
-                    {loading ? (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-2.5 text-center align-middle">
-                          <Loader2 size={20} className="animate-spin text-indigo-500 mx-auto" />
+                  ) : users.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-2.5 text-center text-slate-500 align-middle">
+                        No employees registered.
+                      </td>
+                    </tr>
+                  ) : (
+                    users.map((u) => (
+                      <tr key={u.id} className="hover:bg-slate-50">
+                        <td className="px-3 py-2.5 font-semibold text-slate-800 text-center align-middle">{u.name}</td>
+                        <td className="px-3 py-2.5 text-slate-600 text-center align-middle">{u.mobileNumber || '-'}</td>
+                        <td className="px-3 py-2.5 text-slate-600 text-center align-middle">{u.email}</td>
+                        <td className="px-3 py-2.5 text-center align-middle">
+                          <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded border ${getRoleBadgeClass(u.role)}`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-500 text-center align-middle">
+                          {new Date(u.createdAt).toLocaleDateString()}
                         </td>
                       </tr>
-                    ) : users.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-2.5 text-center text-slate-500 align-middle">
-                          No employees registered.
-                        </td>
-                      </tr>
-                    ) : (
-                      users.map((u) => (
-                        <tr key={u.id} className="hover:bg-slate-50">
-                          <td className="px-3 py-2.5 font-semibold text-slate-800 text-center align-middle">{u.name}</td>
-                          <td className="px-3 py-2.5 text-slate-600 text-center align-middle">{u.mobileNumber || '-'}</td>
-                          <td className="px-3 py-2.5 text-slate-600 text-center align-middle">{u.email}</td>
-                          <td className="px-3 py-2.5 text-center align-middle">
-                            <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded border ${getRoleBadgeClass(u.role)}`}>
-                              {u.role}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5 text-slate-500 text-center align-middle">
-                            {new Date(u.createdAt).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
+      </div>
     </div>
   );
 };
