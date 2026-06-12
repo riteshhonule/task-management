@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsArray, ValidateNested } from 'class-validator';
+import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, IsArray, ValidateNested, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TaskPriority, TaskStatus } from '@prisma/client';
 
@@ -39,11 +39,6 @@ export class TaskProjectDto {
   @IsOptional()
   delayReason?: string;
 
-  @ApiProperty({ example: 'Completed tests locally', required: false })
-  @IsString()
-  @IsOptional()
-  notes?: string;
-  
   @IsString()
   @IsOptional()
   blockedReason?: string;
@@ -55,6 +50,44 @@ export class TaskProjectDto {
   @IsNumber()
   @IsOptional()
   completionPercentage?: number;
+
+  @ApiProperty({ example: 'Please prioritize database migration', required: false })
+  @IsString()
+  @IsOptional()
+  adminComment?: string;
+
+  @IsString()
+  @IsOptional()
+  startTime?: string;
+
+  @IsString()
+  @IsOptional()
+  endTime?: string;
+
+  @IsString()
+  @IsOptional()
+  jobRoleType?: string;
+
+  @IsString()
+  @IsOptional()
+  customJobRole?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  proofRequired?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  assignedByUserId?: number;
+
+  @IsString()
+  @IsOptional()
+  assignmentType?: string;
+
+  @ApiProperty({ example: '2026-05-30T18:00:00.000Z', required: false })
+  @IsDateString()
+  @IsOptional()
+  expectedEndDate?: string;
 }
 
 export class CreateTaskDto {
@@ -73,10 +106,10 @@ export class CreateTaskDto {
   @IsNotEmpty()
   startTime: string;
 
-  @ApiProperty({ example: '2026-05-30T18:00:00.000Z' })
+  @ApiProperty({ example: '2026-05-30T18:00:00.000Z', required: false })
   @IsDateString()
-  @IsNotEmpty()
-  expectedEndDate: string;
+  @IsOptional()
+  expectedEndDate?: string;
 
   @ApiProperty({ type: [TaskProjectDto] })
   @IsArray()

@@ -30,6 +30,7 @@ export class UsersService {
             password: passwordHash,
             role: dto.role,
             mobileNumber: dto.mobileNumber,
+            jobRole: dto.jobRole,
             deletedAt: null,
           },
         });
@@ -49,6 +50,7 @@ export class UsersService {
         password: passwordHash,
         role: dto.role,
         mobileNumber: dto.mobileNumber,
+        jobRole: dto.jobRole,
       },
       select: {
         id: true,
@@ -56,6 +58,7 @@ export class UsersService {
         name: true,
         role: true,
         mobileNumber: true,
+        jobRole: true,
         createdAt: true,
       },
     });
@@ -72,6 +75,7 @@ export class UsersService {
         name: true,
         role: true,
         mobileNumber: true,
+        jobRole: true,
         createdAt: true,
       },
       orderBy: { name: 'asc' },
@@ -90,6 +94,7 @@ export class UsersService {
         name: true,
         role: true,
         mobileNumber: true,
+        jobRole: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -104,6 +109,7 @@ export class UsersService {
         name: true,
         role: true,
         mobileNumber: true,
+        jobRole: true,
         createdAt: true,
       },
     });
@@ -131,6 +137,7 @@ export class UsersService {
         name: true,
         role: true,
         mobileNumber: true,
+        jobRole: true,
         createdAt: true,
       },
     });

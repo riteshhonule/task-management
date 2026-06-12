@@ -14,7 +14,9 @@ import {
   Users,
   Bell,
   X,
+  ClipboardList,
 } from 'lucide-react';
+
 import sidebarLogo from '../assets/sidebar-logo.png';
 
 interface SidebarProps {
@@ -27,7 +29,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   // Dynamic navigation items based on authorization role
-  const menuItems = isAdmin
+  const menuItems: { path: string; name: string; icon: React.ReactNode; disabled?: boolean }[] = isAdmin
     ? [
       { path: '/admin', name: 'Overview', icon: <LayoutDashboard size={18} /> },
       { path: '/reports', name: 'Daily Reviews', icon: <FileSpreadsheet size={18} /> },
@@ -38,19 +40,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       { path: '/announcements', name: 'Announcements', icon: <Megaphone size={18} /> },
       { path: '/analytics', name: 'Performance', icon: <BarChart3 size={18} /> },
       { path: '/notifications', name: 'Notifications', icon: <Bell size={18} /> },
-      { path: '/assign-tasks', name: 'Delegate Tasks', icon: <CheckSquare size={18} />, disabled: true },
+      { path: '/assign-tasks', name: 'Delegate Tasks', icon: <CheckSquare size={18} /> },
 
-      { path: '/leaves', name: 'Leaves Board', icon: <CalendarDays size={18} />, disabled: true },
+      { path: '/leaves', name: 'Leaves Board', icon: <CalendarDays size={18} /> },
     ]
     : [
       { path: '/dashboard', name: 'My Tasks', icon: <LayoutDashboard size={18} /> },
       { path: '/allocated-projects', name: 'Allocated Projects', icon: <FolderKanban size={18} /> },
+      { path: '/assign-task', name: 'Assign Task', icon: <ClipboardList size={18} /> },
+      { path: '/assign-tasks', name: 'Delegate Tasks', icon: <CheckSquare size={18} /> },
       { path: '/messages', name: 'Messages Center', icon: <Mail size={18} /> },
       { path: '/announcements', name: 'Announcements', icon: <Megaphone size={18} /> },
       { path: '/change-password', name: 'Security', icon: <KeyRound size={18} /> },
       { path: '/notifications', name: 'Notifications', icon: <Bell size={18} /> },
-      { path: '/leaves', name: 'My Leaves', icon: <CalendarDays size={18} />, disabled: true },
+      { path: '/leaves', name: 'My Leaves', icon: <CalendarDays size={18} /> },
     ];
+
 
   return (
     <aside className="w-64 h-full bg-slate-950 border-r border-slate-900 px-4 py-6 flex flex-col justify-between">

@@ -18,9 +18,31 @@ export const messaging = typeof window !== 'undefined' && 'serviceWorker' in nav
 
 export const requestForToken = async () => {
   if (!messaging) return null;
+
+  if (typeof window !== 'undefined' && 'Notification' in window) {
+    const permission = Notification.permission;
+    if (permission === 'default') {
+      console.log('Requesting notification permission...');
+      const status = await Notification.requestPermission();
+      if (status !== 'granted') {
+        console.log('Notification permission denied by user.');
+        return null;
+      }
+    } else if (permission === 'denied') {
+      console.log('Notification permission already denied. Please reset in browser settings.');
+      return null;
+    }
+  }
+
   try {
-    const currentToken = await getToken(messaging, { vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY });
+    // Explicitly register service worker to ensure reliability
+    const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const currentToken = await getToken(messaging, { 
+      serviceWorkerRegistration: registration,
+      vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY 
+    });
     if (currentToken) {
+      console.log('FCM token generated successfully:', currentToken);
       return currentToken;
     } else {
       console.log('No registration token available. Request permission to generate one.');
@@ -32,10 +54,9 @@ export const requestForToken = async () => {
   }
 };
 
-export const onMessageListener = () =>
-  new Promise((resolve) => {
-    if (!messaging) return;
-    onMessage(messaging, (payload) => {
-      resolve(payload);
-    });
+export const onMessageListener = (callback: (payload: any) => void) => {
+  if (!messaging) return () => {};
+  return onMessage(messaging, (payload) => {
+    callback(payload);
   });
+};

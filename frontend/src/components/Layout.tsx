@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Outlet, Navigate, useNavigate } from 'react-router-dom';
+import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Sidebar } from './Sidebar';
 import { Navbar } from './Navbar';
-import { messagesApi, usersApi } from '../services/api';
+import { messagesApi, usersApi, tasksApi } from '../services/api';
 import { AlertTriangle, MessageSquare, X, Send, User, CheckCheck, AlertCircle, KeyRound } from 'lucide-react';
 import { GlobalNotificationPopup } from './GlobalNotificationPopup';
 
@@ -54,6 +54,90 @@ export const Layout: React.FC = () => {
   };
 
   // Carry Forward State
+  const [carryForwardTasks, setCarryForwardTasks] = useState<any[]>([]);
+  const [carryForwardReason, setCarryForwardReason] = useState('');
+  const [carryForwardError, setCarryForwardError] = useState('');
+  const [submittingCarryForward, setSubmittingCarryForward] = useState(false);
+  const location = useLocation();
+
+  const checkCarryForwardTasks = async () => {
+    if (!user || user.role !== 'EMPLOYEE') return;
+    try {
+      const res = await tasksApi.checkCarryForward();
+      setCarryForwardTasks(res.data || []);
+    } catch (err) {
+      console.error('Failed to check carry forward tasks:', err);
+    }
+  };
+
+  const getScenario = (task: any) => {
+    if (!task) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const expectedEndDate = new Date(task.expectedEndDate);
+    const expectedDateOnly = new Date(expectedEndDate.getFullYear(), expectedEndDate.getMonth(), expectedEndDate.getDate());
+
+    if (expectedDateOnly.getTime() > today.getTime()) {
+      return 'FUTURE'; // Scenario 1
+    } else if (expectedDateOnly.getTime() === today.getTime()) {
+      return 'TODAY'; // Scenario 2
+    } else {
+      return 'PAST'; // Scenario 3
+    }
+  };
+
+  const currentCarryForwardTask = carryForwardTasks[0] || null;
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && currentCarryForwardTask) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [currentCarryForwardTask]);
+
+  useEffect(() => {
+    if (token && user && user.role === 'EMPLOYEE') {
+      checkCarryForwardTasks();
+    }
+  }, [token, user, location.pathname]);
+
+  const handleCarryForwardSubmit = async () => {
+    if (!currentCarryForwardTask) return;
+
+    const scenario = getScenario(currentCarryForwardTask);
+    const reasonRequired = scenario !== 'FUTURE';
+
+    if (reasonRequired && carryForwardReason.trim().length < 20) {
+      setCarryForwardError('Delay reason is required and must be at least 20 characters.');
+      return;
+    }
+
+    setCarryForwardError('');
+    setSubmittingCarryForward(true);
+    try {
+      await tasksApi.handleCarryForward({
+        taskId: currentCarryForwardTask.id,
+        carryForward: true,
+        reason: reasonRequired ? carryForwardReason.trim() : undefined,
+      });
+
+      setCarryForwardReason('');
+      await checkCarryForwardTasks();
+      window.dispatchEvent(new CustomEvent('sync-tasks'));
+    } catch (err: any) {
+      console.error(err);
+      setCarryForwardError(err.response?.data?.message || 'Failed to carry forward task.');
+    } finally {
+      setSubmittingCarryForward(false);
+    }
+  };
 
   // Mandatory Messages Blocker State
   const [pendingMandatoryMessages, setPendingMandatoryMessages] = useState<any[]>([]);
@@ -359,6 +443,128 @@ export const Layout: React.FC = () => {
         </div>
       )}
 
+      {/* CARRY FORWARD POPUP BLOCKER */}
+      {currentCarryForwardTask && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4">
+          <div className="w-full max-w-xl rounded-2xl border bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200 border-slate-200">
+            {getScenario(currentCarryForwardTask) === 'FUTURE' ? (
+              <div className="space-y-6">
+                <div className="flex items-center gap-3.5 text-indigo-600">
+                  <div className="rounded-xl bg-indigo-50 p-2.5 border border-indigo-100 shadow-sm">
+                    <Send size={24} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading text-lg font-bold text-slate-800">Carry Forward Previous Task</h3>
+                    <p className="text-xs text-slate-400">Shift unfinished work from yesterday to your schedule today.</p>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-xl bg-slate-50 border border-slate-100 text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">
+                  <span className="font-bold text-slate-800 block mb-2 text-xs uppercase tracking-wider text-slate-500">Unfinished Projects:</span>
+                  <ul className="list-disc pl-5 space-y-1.5 font-medium text-slate-600">
+                    {currentCarryForwardTask.projects?.map((p: any) => (
+                      <li key={p.id}>
+                        <strong className="text-indigo-600">{p.project?.name}:</strong> {p.taskDescription}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                  Since the expected end date is in the future ({new Date(currentCarryForwardTask.expectedEndDate).toLocaleDateString()}), no delay reason is required. Let's move this to today's schedule.
+                </p>
+
+                <div className="flex items-center justify-end pt-2">
+                  <button
+                    disabled={submittingCarryForward}
+                    onClick={handleCarryForwardSubmit}
+                    className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-bold text-white hover:bg-indigo-500 active:bg-indigo-700 transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+                  >
+                    {submittingCarryForward ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        Carrying forward...
+                      </>
+                    ) : (
+                      'Carry Forward Task'
+                    )}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="flex items-center gap-3.5 text-rose-650">
+                  <div className="rounded-xl bg-rose-50 p-2.5 border border-rose-100 shadow-sm">
+                    <AlertTriangle size={24} className="animate-bounce text-rose-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading text-lg font-bold text-slate-800">
+                      {getScenario(currentCarryForwardTask) === 'TODAY' ? '⚠ Danger Zone' : '⚠ Overdue Task'}
+                    </h3>
+                    <p className="text-xs text-rose-600 font-semibold">
+                      {getScenario(currentCarryForwardTask) === 'TODAY' 
+                        ? 'Task expected deadline is today!' 
+                        : 'Task expected deadline has already passed!'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-xl bg-slate-50 border border-slate-100 text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">
+                  <span className="font-bold text-slate-800 block mb-2 text-xs uppercase tracking-wider text-slate-500">Unfinished Projects:</span>
+                  <ul className="list-disc pl-5 space-y-1.5 font-medium text-slate-600">
+                    {currentCarryForwardTask.projects?.map((p: any) => (
+                      <li key={p.id}>
+                        <strong className="text-indigo-600">{p.project?.name}:</strong> {p.taskDescription}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                    Delay Reason <span className="text-rose-500">* (Minimum 20 characters)</span>
+                  </label>
+                  <textarea
+                    value={carryForwardReason}
+                    onChange={(e) => {
+                      setCarryForwardReason(e.target.value);
+                      if (e.target.value.trim().length >= 20) setCarryForwardError('');
+                    }}
+                    placeholder="Provide a detailed explanation of why the task is delayed or overdue..."
+                    className={`w-full rounded-xl bg-white border ${
+                      carryForwardError ? 'border-rose-500 ring-1 ring-rose-500/20' : 'border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20'
+                    } px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none min-h-24 resize-none transition-colors`}
+                  />
+                  {carryForwardError && (
+                    <p className="text-xs text-rose-500 font-semibold">{carryForwardError}</p>
+                  )}
+                  <p className="text-[10px] text-slate-400 font-medium text-right">
+                    {carryForwardReason.trim().length} / 20 characters minimum
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end pt-2">
+                  <button
+                    disabled={submittingCarryForward}
+                    onClick={handleCarryForwardSubmit}
+                    className="w-full rounded-xl bg-rose-600 py-3.5 text-sm font-bold text-white hover:bg-rose-500 active:bg-rose-700 transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-rose-650/20"
+                  >
+                    {submittingCarryForward ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        Carrying forward...
+                      </>
+                    ) : (
+                      'Carry Forward & Submit Reason'
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {showProfileModal && user && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="relative w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
@@ -451,6 +657,18 @@ export const Layout: React.FC = () => {
                       ? 'bg-white border border-slate-200 text-slate-800 placeholder-slate-400 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20'
                       : 'bg-slate-50 border border-slate-100 text-slate-500 cursor-default select-none'
                   }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  Job Role
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={user.jobRole || 'Not specified'}
+                  className="block w-full rounded-xl px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-100 text-slate-500 cursor-default select-none focus:outline-none"
                 />
               </div>
 

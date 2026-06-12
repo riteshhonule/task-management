@@ -90,4 +90,72 @@ export class ReportsController {
   getAnalytics() {
     return this.reportsService.getDashboardAnalytics();
   }
+
+  @Get('performance-intelligence')
+  @ApiOperation({ summary: 'Get advanced performance intelligence analytics' })
+  @ApiQuery({ name: 'employeeId', required: false, type: Number })
+  @ApiQuery({ name: 'startDate', required: false, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'YYYY-MM-DD' })
+  async getPerformanceIntelligence(
+    @CurrentUser() user: User,
+    @Query('employeeId') employeeId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
+    if (user.role === Role.EMPLOYEE) {
+      targetEmployeeId = user.id;
+    }
+    return this.reportsService.getPerformanceIntelligence(targetEmployeeId, startDate, endDate);
+  }
+
+  @Get('performance-intelligence/export-excel')
+  @ApiOperation({ summary: 'Export performance intelligence to Excel' })
+  @ApiQuery({ name: 'employeeId', required: false, type: Number })
+  @ApiQuery({ name: 'startDate', required: false, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'YYYY-MM-DD' })
+  async exportPerformanceExcel(
+    @Res() res: Response,
+    @CurrentUser() user: User,
+    @Query('employeeId') employeeId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
+    if (user.role === Role.EMPLOYEE) {
+      targetEmployeeId = user.id;
+    }
+    const buffer = await this.reportsService.exportPerformanceExcel(targetEmployeeId, startDate, endDate);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename=performance-intelligence-${startDate || 'all'}-to-${endDate || 'all'}.xlsx`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Get('performance-intelligence/export-pdf')
+  @ApiOperation({ summary: 'Export performance intelligence to PDF' })
+  @ApiQuery({ name: 'employeeId', required: false, type: Number })
+  @ApiQuery({ name: 'startDate', required: false, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'endDate', required: false, description: 'YYYY-MM-DD' })
+  async exportPerformancePdf(
+    @Res() res: Response,
+    @CurrentUser() user: User,
+    @Query('employeeId') employeeId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
+    if (user.role === Role.EMPLOYEE) {
+      targetEmployeeId = user.id;
+    }
+    const buffer = await this.reportsService.exportPerformancePdf(targetEmployeeId, startDate, endDate);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename=performance-intelligence-${startDate || 'all'}-to-${endDate || 'all'}.pdf`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
 }

@@ -63,25 +63,27 @@ export const Navbar: React.FC<NavbarProps> = ({ onMenuToggle, onProfileClick }) 
 
       <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-4">
         {/* Voice Settings Dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setShowVoiceSettings(!showVoiceSettings)}
-            className="relative p-2 text-slate-400 hover:text-indigo-400 rounded-lg hover:bg-white/10 transition-colors"
-            title="Voice Notification Settings"
-          >
-            <Volume2 size={20} />
-          </button>
+        {user?.role !== 'ADMIN' && user?.role !== 'SUPER_ADMIN' && (
+          <div className="relative">
+            <button
+              onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+              className="relative p-2 text-slate-400 hover:text-indigo-400 rounded-lg hover:bg-white/10 transition-colors"
+              title="Voice Notification Settings"
+            >
+              <Volume2 size={20} />
+            </button>
 
-          {showVoiceSettings && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setShowVoiceSettings(false)}
-              />
-              <VoiceSettingsModal onClose={() => setShowVoiceSettings(false)} />
-            </>
-          )}
-        </div>
+            {showVoiceSettings && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowVoiceSettings(false)}
+                />
+                <VoiceSettingsModal onClose={() => setShowVoiceSettings(false)} />
+              </>
+            )}
+          </div>
+        )}
 
         {/* Notification Bell Dropdown */}
         <div className="relative">

@@ -16,10 +16,12 @@ export class LeavesService {
     const leave = await this.prisma.leave.create({
       data: {
         employeeId,
+        leaveType: dto.leaveType,
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         reason: dto.reason,
-        status: LeaveStatus.PENDING,
+        attachmentUrl: dto.attachmentUrl || null,
+        status: LeaveStatus.APPROVED,
       },
       include: {
         employee: {
@@ -27,6 +29,17 @@ export class LeavesService {
         },
       },
     });
+
+    const formatDate = (dateStr: string) => {
+      const d = new Date(dateStr);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    };
+
+    const formattedStart = formatDate(dto.startDate);
+    const formattedEnd = formatDate(dto.endDate);
 
     // Notify admins
     const admins = await this.prisma.user.findMany({
@@ -42,7 +55,8 @@ export class LeavesService {
         admin.id,
         'LEAVE_REQUEST',
         'New Leave Application',
-        `Employee "${leave.employee.name}" applied for leave from ${dto.startDate.split('T')[0]} to ${dto.endDate.split('T')[0]}.`,
+        `${leave.employee.name} has submitted leave from ${formattedStart} to ${formattedEnd}.`,
+        { type: 'LEAVE', leaveId: leave.id },
       );
     }
 

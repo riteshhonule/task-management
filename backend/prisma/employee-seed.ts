@@ -13,6 +13,7 @@ async function main() {
       email: 'sadwaita2001@gmail.com',
       password: 'Adwaita@12345',
       role: Role.EMPLOYEE,
+      jobRole: 'Frontend Developer',
     },
     {
       name: 'Vallabh Ghatge',
@@ -20,6 +21,7 @@ async function main() {
       email: 'ghatgevallabh03@gmail.com',
       password: 'Vallabh@12345',
       role: Role.EMPLOYEE,
+      jobRole: 'Frontend Developer',
     },
     {
       name: 'Mahadev Patil',
@@ -27,6 +29,7 @@ async function main() {
       email: 'mahadev.smp1@gmail.com',
       password: 'Mahadev@12345',
       role: Role.EMPLOYEE,
+      jobRole: 'Frontend Developer',
     },
     {
       name: 'Mahendra Powar',
@@ -34,6 +37,7 @@ async function main() {
       email: 'mahendrapowar07@gmail.com',
       password: 'Mahendra@12345',
       role: Role.EMPLOYEE,
+      jobRole: 'Frontend Developer',
     },
     {
       name: 'Vaishnavi Chandilkar',
@@ -41,6 +45,7 @@ async function main() {
       email: 'vaishnavichandilkar26@gmail.com',
       password: 'Vaishnavi@12345',
       role: Role.EMPLOYEE,
+      jobRole: 'Full Stack Developer',
     },
     {
       name: 'Shridhar Patil',
@@ -48,6 +53,7 @@ async function main() {
       email: 'shridharpatil723@gmail.com',
       password: 'Shridhar@12345',
       role: Role.EMPLOYEE,
+      jobRole: 'Full Stack Developer',
     },
     {
       name: 'Ritesh Honule',
@@ -55,6 +61,15 @@ async function main() {
       email: 'riteshhonule@gmail.com',
       password: 'Ritesh@12345',
       role: Role.EMPLOYEE,
+      jobRole: 'Full Stack Developer',
+    },
+    {
+      name: 'Shabaj Mujawar',
+      mobileNumber: '8956080501',
+      email: 'shabajmujawar2103@gmail.com',
+      password: 'Shabaj@12345',
+      role: Role.EMPLOYEE,
+      jobRole: 'Frontend Developer',
     },
   ];
 
@@ -84,6 +99,7 @@ async function main() {
         mobileNumber: emp.mobileNumber,
         password: passwordHash,
         role: emp.role,
+        jobRole: emp.jobRole,
       },
       create: {
         email: emp.email,
@@ -91,6 +107,7 @@ async function main() {
         mobileNumber: emp.mobileNumber,
         password: passwordHash,
         role: emp.role,
+        jobRole: emp.jobRole,
       },
     });
   }

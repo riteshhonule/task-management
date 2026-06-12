@@ -26,17 +26,23 @@ export const GlobalNotificationPopup: React.FC = () => {
       const customEvent = e as CustomEvent;
       const data = customEvent.detail;
       setNotifications((prev) => [...prev, data]);
-      let priority = 3;
-      if (data.type === 'MANDATORY_RESPONSE') priority = 1;
-      else if (data.type === 'TASK_ASSIGNED' || data.type === 'PROJECT_ALLOCATED') priority = 2;
-      voiceService.announce(data.message, priority);
+      const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+      if (!isAdmin) {
+        let priority = 3;
+        if (data.type === 'MANDATORY_RESPONSE') priority = 1;
+        else if (data.type === 'TASK_ASSIGNED' || data.type === 'PROJECT_ALLOCATED') priority = 2;
+        voiceService.announce(data.message, priority);
+      }
     };
 
     const handleAnnouncement = (e: Event) => {
       const customEvent = e as CustomEvent;
       const data = customEvent.detail;
       setNotifications((prev) => [...prev, data]);
-      voiceService.announce(data.message, 3);
+      const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+      if (!isAdmin) {
+        voiceService.announce(data.message, 3);
+      }
     };
 
     window.addEventListener('sync-notifications', handleNotification);

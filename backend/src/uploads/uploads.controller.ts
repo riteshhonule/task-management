@@ -35,9 +35,9 @@ export class UploadsController {
     return this.uploadsService.uploadFile(file, req.user);
   }
 
-  @Get('*filepath')
+  @Get('*')
   @ApiOperation({ summary: 'Serve uploaded file' })
-  serveFile(@Param('filepath') filepath: string, @Res() res: Response) {
+  serveFile(@Param('0') filepath: string, @Res() res: Response) {
     if (!filepath) {
       throw new NotFoundException('File path not provided');
     }

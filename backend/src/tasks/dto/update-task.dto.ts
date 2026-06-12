@@ -50,10 +50,6 @@ export class UpdateTaskProjectDto {
 
   @IsString()
   @IsOptional()
-  notes?: string;
-  
-  @IsString()
-  @IsOptional()
   remarks?: string;
 
   @IsString()
@@ -67,6 +63,62 @@ export class UpdateTaskProjectDto {
   @IsString()
   @IsOptional()
   rejectionReason?: string;
+
+  @IsString()
+  @IsOptional()
+  adminComment?: string;
+
+  @IsString()
+  @IsOptional()
+  startTime?: string;
+
+  @IsString()
+  @IsOptional()
+  endTime?: string;
+
+  @IsString()
+  @IsOptional()
+  jobRoleType?: string;
+
+  @IsString()
+  @IsOptional()
+  customJobRole?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  proofRequired?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  assignedByUserId?: number;
+
+  @IsString()
+  @IsOptional()
+  assignmentType?: string;
+
+  @IsNumber()
+  @IsOptional()
+  estimatedEffort?: number;
+
+  @IsNumber()
+  @IsOptional()
+  timeSpent?: number;
+
+  @IsString()
+  @IsOptional()
+  blockers?: string;
+
+  @IsString()
+  @IsOptional()
+  workSummary?: string;
+
+  @IsString()
+  @IsOptional()
+  additionalNotes?: string;
+
+  @IsDateString()
+  @IsOptional()
+  expectedEndDate?: string;
 }
 
 export class UpdateTaskDto {
@@ -96,4 +148,9 @@ export class UpdateTaskDto {
   @Type(() => UpdateTaskProjectDto)
   @IsOptional()
   projects?: UpdateTaskProjectDto[];
+
+  @ApiProperty({ example: false, required: false, description: 'Skip deleting projects not mentioned in payload' })
+  @IsBoolean()
+  @IsOptional()
+  partialUpdate?: boolean;
 }

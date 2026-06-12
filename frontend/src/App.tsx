@@ -9,6 +9,7 @@ import { AdminDashboard } from './pages/AdminDashboard';
 import { Projects } from './pages/Projects';
 import { Employees } from './pages/Employees';
 import { AssignTasks } from './pages/AssignTasks';
+import { EmployeeAssignTask } from './pages/EmployeeAssignTask';
 import { Messages } from './pages/Messages';
 import { Announcements } from './pages/Announcements';
 import { Leaves } from './pages/Leaves';
@@ -17,6 +18,7 @@ import { Analytics } from './pages/Analytics';
 import { AllocatedProjects } from './pages/AllocatedProjects';
 import { NotificationsModule } from './pages/NotificationsModule';
 import { ResetPassword } from './pages/ResetPassword';
+
 
 // HomeRedirect component directs users based on auth role
 const HomeRedirect: React.FC = () => {
@@ -46,6 +48,8 @@ function App() {
             <Route path="dashboard" element={<EmployeeDashboard />} />
             <Route path="allocated-projects" element={<AllocatedProjects />} />
             <Route path="change-password" element={<ChangePassword />} />
+            <Route path="assign-task" element={<EmployeeAssignTask />} />
+
 
             {/* Admin Views */}
             <Route path="admin" element={<AdminDashboard />} />

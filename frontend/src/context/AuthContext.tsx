@@ -3,6 +3,7 @@ import { authApi } from '../services/api';
 import { connectSocket, disconnectSocket } from '../services/socket';
 import { requestForToken, onMessageListener } from '../firebase/firebase';
 import api from '../services/api';
+import { playNotificationSound } from '../utils/sound';
 
 interface User {
   id: number;
@@ -10,6 +11,7 @@ interface User {
   name: string;
   role: 'SUPER_ADMIN' | 'ADMIN' | 'EMPLOYEE';
   mobileNumber?: string;
+  jobRole?: string;
 }
 
 interface AuthContextType {
@@ -70,6 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             isRead: false,
           });
         },
+        res.data.role,
       );
       
       // Initialize Firebase Cloud Messaging
@@ -79,9 +82,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await api.post('/firebase/token', { fcmToken: token, deviceType: 'WEB' });
         }
         
-        onMessageListener().then((payload: any) => {
+        onMessageListener((payload: any) => {
           console.log('[Foreground] Received Firebase message: ', payload);
-        }).catch(err => console.log('failed to setup listener: ', err));
+          if (res.data.role !== 'ADMIN' && res.data.role !== 'SUPER_ADMIN') {
+            const key = payload.data?.notificationId 
+              ? `notification-${payload.data.notificationId}` 
+              : (payload.data?.messageId || payload.messageId || `fcm-${Date.now()}`);
+            playNotificationSound(key);
+          }
+        });
       } catch(err) {
         console.error('FCM Token error:', err);
       }
@@ -114,6 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             isRead: false,
           });
         },
+        loggedUser.role,
       );
 
       // Fetch user notifications list

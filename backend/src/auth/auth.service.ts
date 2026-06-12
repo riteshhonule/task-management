@@ -51,6 +51,7 @@ export class AuthService {
         name: user.name,
         role: user.role,
         mobileNumber: user.mobileNumber,
+        jobRole: user.jobRole,
       },
     };
   }
@@ -180,6 +181,7 @@ export class AuthService {
         name: true,
         role: true,
         mobileNumber: true,
+        jobRole: true,
         createdAt: true,
       },
     });

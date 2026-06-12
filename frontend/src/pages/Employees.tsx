@@ -12,9 +12,12 @@ export const Employees: React.FC = () => {
   const [mobileNumber, setMobileNumber] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('EMPLOYEE');
+  const [jobRole, setJobRole] = useState('');
+  const [customJobRole, setCustomJobRole] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
 
   const fetchUsers = async () => {
     try {
@@ -49,12 +52,14 @@ export const Employees: React.FC = () => {
     setErrorMsg('');
     setSuccessMsg('');
     try {
+      const selectedJobRole = jobRole === 'Other' ? customJobRole : jobRole;
       await usersApi.create({
         name,
         email,
         mobileNumber: mobileNumber || undefined,
         password,
         role,
+        jobRole: selectedJobRole || undefined,
       });
       setSuccessMsg(`Employee "${name}" created successfully.`);
       setName('');
@@ -62,6 +67,9 @@ export const Employees: React.FC = () => {
       setMobileNumber('');
       setPassword('');
       setRole('EMPLOYEE');
+      setJobRole('');
+      setCustomJobRole('');
+      setShowForm(false);
       await fetchUsers();
     } catch (err: any) {
       console.error(err);
@@ -193,6 +201,42 @@ export const Employees: React.FC = () => {
                 </select>
               </div>
 
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
+                  Job Role
+                </label>
+                <select
+                  value={jobRole}
+                  onChange={(e) => setJobRole(e.target.value)}
+                  className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select Job Role</option>
+                  <option value="Frontend Developer">Frontend Developer</option>
+                  <option value="Backend Developer">Backend Developer</option>
+                  <option value="Full Stack Developer">Full Stack Developer</option>
+                  <option value="UI/UX Designer">UI/UX Designer</option>
+                  <option value="QA Tester">QA Tester</option>
+                  <option value="Project Manager">Project Manager</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {jobRole === 'Other' && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
+                    Custom Job Role
+                  </label>
+                  <input
+                    type="text"
+                    value={customJobRole}
+                    onChange={(e) => setCustomJobRole(e.target.value)}
+                    placeholder="e.g. Data Scientist"
+                    required
+                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={isCreating}
@@ -223,6 +267,7 @@ export const Employees: React.FC = () => {
                     <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Name</th>
                     <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Mobile Number</th>
                     <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Email</th>
+                    <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Job Role</th>
                     <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Role</th>
                     <th className="px-4 py-6 bg-slate-100/80 backdrop-blur-md text-center align-middle">Created</th>
                   </tr>
@@ -230,22 +275,23 @@ export const Employees: React.FC = () => {
                 <tbody className="divide-y divide-slate-200 text-xs text-slate-700 bg-white">
                   {loading ? (
                     <tr>
-                      <td colSpan={5} className="px-3 py-2.5 text-center align-middle">
+                      <td colSpan={6} className="px-3 py-2.5 text-center align-middle">
                         <Loader2 size={20} className="animate-spin text-indigo-500 mx-auto" />
                       </td>
                     </tr>
                   ) : users.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-3 py-2.5 text-center text-slate-500 align-middle">
+                      <td colSpan={6} className="px-3 py-2.5 text-center text-slate-500 align-middle">
                         No employees registered.
                       </td>
                     </tr>
                   ) : (
                     users.map((u) => (
-                      <tr key={u.id} className="hover:bg-slate-50">
+                      <tr key={u.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setSelectedUser(u)}>
                         <td className="px-3 py-2.5 font-semibold text-slate-800 text-center align-middle">{u.name}</td>
                         <td className="px-3 py-2.5 text-slate-600 text-center align-middle">{u.mobileNumber || '-'}</td>
                         <td className="px-3 py-2.5 text-slate-600 text-center align-middle">{u.email}</td>
+                        <td className="px-3 py-2.5 text-slate-600 text-center align-middle">{u.jobRole || '-'}</td>
                         <td className="px-3 py-2.5 text-center align-middle">
                           <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded border ${getRoleBadgeClass(u.role)}`}>
                             {u.role}
@@ -263,6 +309,52 @@ export const Employees: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {selectedUser && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-6 shadow-2xl max-w-md w-full relative">
+            <button onClick={() => setSelectedUser(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+              <span className="sr-only">Close</span>
+              &times;
+            </button>
+            <div className="text-center border-b border-slate-100 pb-4">
+              <div className="w-16 h-16 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold font-heading mb-2">
+                {selectedUser.name.charAt(0).toUpperCase()}
+              </div>
+              <h3 className="font-heading font-extrabold text-slate-800 text-lg">{selectedUser.name}</h3>
+              <p className="text-xs text-slate-500 font-medium">{selectedUser.jobRole || 'No Job Role Assigned'}</p>
+            </div>
+
+            <div className="space-y-4 text-sm text-slate-700">
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Email</span>
+                <span className="font-medium text-slate-800">{selectedUser.email}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Mobile</span>
+                <span className="font-medium text-slate-800">{selectedUser.mobileNumber || '-'}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-50">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">System Role</span>
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded border ${getRoleBadgeClass(selectedUser.role)}`}>
+                  {selectedUser.role}
+                </span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Registered</span>
+                <span className="font-medium text-slate-800">{new Date(selectedUser.createdAt).toLocaleDateString()}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setSelectedUser(null)}
+              className="w-full rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white hover:bg-slate-700 transition-colors"
+            >
+              Close Details
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

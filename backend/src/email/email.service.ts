@@ -27,7 +27,7 @@ export class EmailService {
   }
 
   async sendPasswordResetEmail(to: string, userName: string, token: string) {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'https://dem-brown-incident-lines.trycloudflare.com';
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
     const from = this.configService.get<string>('SMTP_FROM') || `"TaskFlow OS" <${this.configService.get<string>('SMTP_USER')}>`;
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 

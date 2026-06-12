@@ -28,4 +28,9 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   mobileNumber?: string;
+
+  @ApiProperty({ example: 'Frontend Developer', required: false })
+  @IsString()
+  @IsOptional()
+  jobRole?: string;
 }

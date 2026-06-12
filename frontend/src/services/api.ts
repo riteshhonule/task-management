@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_URL = 'https://mate-star-advert-greeting.trycloudflare.com';
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3003';
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -33,6 +33,7 @@ export const authApi = {
 // Users Service endpoints
 export const usersApi = {
   list: (params?: any) => apiClient.get('/users', { params }),
+  listEmployees: () => apiClient.get('/users/employees'),
   create: (data: any) => apiClient.post('/users', data),
   update: (id: number, data: any) => apiClient.patch(`/users/${id}`, data),
   delete: (id: number) => apiClient.delete(`/users/${id}`),
@@ -56,8 +57,12 @@ export const tasksApi = {
   update: (id: number, data: any) => apiClient.patch(`/tasks/${id}`, data),
   delete: (id: number) => apiClient.delete(`/tasks/${id}`),
   checkCarryForward: () => apiClient.get('/tasks/carry-forward-check'),
-  handleCarryForward: (data: { taskId: number; carryForward: boolean }) =>
+  handleCarryForward: (data: { taskId: number; carryForward: boolean; reason?: string }) =>
     apiClient.post('/tasks/carry-forward', data),
+  getMySections: () => apiClient.get('/tasks/my-sections'),
+  assignEmployeeTask: (data: any) => apiClient.post('/tasks', data),
+  submitProjectTask: (id: number, data: any) => apiClient.post(`/tasks/project-task/${id}/submit`, data),
+  reviewProjectTask: (id: number, data: any) => apiClient.post(`/tasks/project-task/${id}/review`, data),
   getMetrics: () => apiClient.get('/tasks/dashboard-metrics'),
   acceptPending: (taskId: number) => apiClient.post(`/tasks/${taskId}/accept-pending`),
   rejectPending: (taskId: number, reason: string) => apiClient.post(`/tasks/${taskId}/reject-pending`, { reason }),
@@ -104,6 +109,15 @@ export const reportsApi = {
   analytics: () => apiClient.get('/reports/analytics'),
   getExcelUrl: (date?: string) => `${API_URL}/reports/export-excel?date=${date || ''}`,
   getPdfUrl: (date?: string) => `${API_URL}/reports/export-pdf?date=${date || ''}`,
+  performanceIntelligence: (params?: any) => apiClient.get('/reports/performance-intelligence', { params }),
+  getPerformanceExcelUrl: (params?: any) => {
+    const query = new URLSearchParams(params).toString();
+    return `${API_URL}/reports/performance-intelligence/export-excel?${query}`;
+  },
+  getPerformancePdfUrl: (params?: any) => {
+    const query = new URLSearchParams(params).toString();
+    return `${API_URL}/reports/performance-intelligence/export-pdf?${query}`;
+  },
 };
 
 // File Uploads service

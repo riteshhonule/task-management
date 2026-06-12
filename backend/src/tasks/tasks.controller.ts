@@ -43,9 +43,8 @@ export class TasksController {
     @Query('endDate') endDate?: string,
     @Query('search') search?: string,
   ) {
-    // Employees can only fetch their own tasks, except in admin overview mode (which they shouldn't access)
     let targetEmployeeId = employeeId ? parseInt(employeeId) : undefined;
-    if (user.role === Role.EMPLOYEE) {
+    if (user.role === Role.EMPLOYEE && !employeeId) {
       targetEmployeeId = user.id;
     }
 
@@ -58,7 +57,7 @@ export class TasksController {
       startDate,
       endDate,
       search,
-    });
+    }, user.id, user.role);
   }
 
   @Get('carry-forward-check')
@@ -67,14 +66,21 @@ export class TasksController {
     return this.tasksService.checkCarryForward(user.id);
   }
 
+  @Get('my-sections')
+  @ApiOperation({ summary: 'Get tasks split into 4 sections: carryForward, todaysTasks, assignedToMe, assignedByMe' })
+  getMySections(@CurrentUser() user: User) {
+    return this.tasksService.getTasksBySection(user.id);
+  }
+
   @Post('carry-forward')
   @ApiOperation({ summary: 'Accept/dismiss carrying forward a yesterday task' })
   handleCarryForward(
     @CurrentUser() user: User,
     @Body('taskId', ParseIntPipe) taskId: number,
     @Body('carryForward', ParseBoolPipe) carryForward: boolean,
+    @Body('reason') reason?: string,
   ) {
-    return this.tasksService.handleCarryForward(taskId, carryForward, user.id);
+    return this.tasksService.handleCarryForward(taskId, carryForward, user.id, reason);
   }
 
   @Get('dashboard-metrics')
@@ -101,8 +107,7 @@ export class TasksController {
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Soft delete a task (Admin/SuperAdmin only)' })
+  @ApiOperation({ summary: 'Soft delete a task' })
   remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
     return this.tasksService.remove(id, user.id, user.role);
   }
@@ -127,5 +132,28 @@ export class TasksController {
       throw new BadRequestException('Reason is required for rejection');
     }
     return this.tasksService.rejectPendingProjects(id, user.id, reason);
+  }
+
+  @Post('project-task/:id/submit')
+  @ApiOperation({ summary: 'Submit task proof, work review, and comment' })
+  submitProjectTask(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('comment') comment: string,
+    @Body('proof') proof: any,
+    @Body('workReview') workReview: any,
+    @CurrentUser() user: User,
+  ) {
+    return this.tasksService.submitProjectTask(id, comment, proof, user.id, workReview);
+  }
+
+  @Post('project-task/:id/review')
+  @ApiOperation({ summary: 'Review delegated task (Approve or Request Revision)' })
+  reviewProjectTask(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('status') status: string,
+    @Body('comment') comment: string,
+    @CurrentUser() user: User,
+  ) {
+    return this.tasksService.reviewProjectTask(id, status, comment, user.id, user.role);
   }
 }

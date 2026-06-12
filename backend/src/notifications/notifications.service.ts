@@ -12,6 +12,41 @@ export class NotificationsService {
   ) {}
 
   async createNotification(userId: number, type: string, title: string, message: string, metadata?: any, senderId?: number, relatedTaskId?: number) {
+    const userObj = await this.prisma.user.findUnique({
+      where: { id: userId, deletedAt: null },
+      select: { role: true },
+    });
+
+    if (!userObj) {
+      return null;
+    }
+
+    if (userObj.role === 'ADMIN' || userObj.role === 'SUPER_ADMIN') {
+      const isOverdue = (type === 'TASK_UPDATED' && metadata?.isOverdue === true) || 
+                        title.toLowerCase().includes('overdue') || 
+                        message.toLowerCase().includes('overdue') ||
+                        message.toLowerCase().includes('delay reason');
+
+      const isReview = type === 'TASK_REVIEW_SUBMITTED' || 
+                       title.toLowerCase().includes('review');
+
+      const isLeave = type === 'LEAVE_REQUEST';
+
+      const isMessageResponse = type === 'MESSAGE_RESPONSE';
+
+      const isTaskRejection = type === 'TASK_UPDATED' && title === 'Task Rejected by Employee';
+
+      const isCritical = isOverdue || isReview || isLeave || isMessageResponse || isTaskRejection;
+
+      if (!isCritical) {
+        return null;
+      }
+
+      if (isOverdue && !title.startsWith('[HIGH PRIORITY]')) {
+        title = `[HIGH PRIORITY] ${title}`;
+      }
+    }
+
     const notification = await this.prisma.notification.create({
       data: {
         userId,
@@ -31,13 +66,19 @@ export class NotificationsService {
     // Emit live event via websocket gateway to receiver
     this.gateway.sendToUser(userId, 'notification', { ...notification, metadata });
 
+    const pushMetadata = {
+      ...metadata,
+      notificationId: String(notification.id),
+      type: notification.type,
+    };
+
     // Send push notification
     if (type.includes('TASK')) {
-      await this.firebaseService.sendTaskNotification(userId, title, message, metadata);
+      await this.firebaseService.sendTaskNotification(userId, title, message, pushMetadata);
     } else if (type.includes('PROJECT')) {
-      await this.firebaseService.sendProjectNotification(userId, title, message, metadata);
+      await this.firebaseService.sendProjectNotification(userId, title, message, pushMetadata);
     } else {
-      await this.firebaseService.sendToUser(userId, title, message, metadata);
+      await this.firebaseService.sendToUser(userId, title, message, pushMetadata);
     }
 
     return notification;
@@ -52,9 +93,12 @@ export class NotificationsService {
   }
 
   async broadcastNotification(type: string, title: string, message: string) {
-    // Get all active users to create notifications in DB
+    // Get all active users whose role is NOT ADMIN or SUPER_ADMIN
     const users = await this.prisma.user.findMany({
-      where: { deletedAt: null },
+      where: { 
+        deletedAt: null,
+        role: { notIn: ['ADMIN', 'SUPER_ADMIN'] }
+      },
       select: { id: true },
     });
 

@@ -1,9 +1,40 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { tasksApi, projectsApi, usersApi, API_URL } from '../services/api';
+import { tasksApi, projectsApi, usersApi, leavesApi, API_URL, uploadsApi } from '../services/api';
 import { FileSpreadsheet, Search, Loader2, Calendar, Plus, X, CheckSquare } from 'lucide-react';
+import { EditTaskModal } from '../components/EditTaskModal';
+import { TimePicker } from '../components/TimePicker';
+import { parseTimeToMinutes } from '../components/EditTaskModal';
 
 type TabType = 'TODAY' | 'YESTERDAY' | 'ALL' | 'COMPLETED' | 'IN_PROGRESS' | 'DELAYED' | 'PENDING';
+
+const getPriorityColor = (prio: string) => {
+  switch (prio) {
+    case 'HIGH':
+      return 'text-rose-700 bg-rose-50 border-rose-100';
+    case 'MEDIUM':
+      return 'text-amber-700 bg-amber-50 border-amber-100';
+    default:
+      return 'text-emerald-700 bg-emerald-50 border-emerald-100';
+  }
+};
+
+const renderTaskTypeBadge = (type: string) => {
+  switch (type) {
+    case 'ADMIN':
+      return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">ADMIN</span>;
+    case 'EMPLOYEE':
+      return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">EMPLOYEE</span>;
+    case 'SELF':
+      return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100">SELF</span>;
+    case 'CARRY_FORWARD':
+      return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-100">CARRY FORWARD</span>;
+    case 'LEAVE':
+      return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-700 border border-red-100">LEAVE</span>;
+    default:
+      return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-50 text-slate-700 border border-slate-100">{type || 'SELF'}</span>;
+  }
+};
 
 export const Reports: React.FC = () => {
   const [urlParams] = useSearchParams();
@@ -23,13 +54,40 @@ export const Reports: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [successPopupMessage, setSuccessPopupMessage] = useState('');
   const [editTask, setEditTask] = useState<any>(null);
+  const [editModalTask, setEditModalTask] = useState<any | null>(null);
+  const [editModalInitialTab, setEditModalInitialTab] = useState<'details' | 'review' | 'approve' | 'history' | 'timeline' | undefined>(undefined);
+
+  const handleOpenEditModal = (p: any, parentTask: any, initialTab?: any) => {
+    setEditModalInitialTab(initialTab);
+    setEditModalTask({
+      ...p,
+      taskId: parentTask.id || p.taskId,
+      taskProjectId: p.id || p.taskProjectId || p.id,
+      expectedEndDate: p.expectedEndDate || parentTask.expectedEndDate,
+      startDate: parentTask.startDate,
+      employeeName: parentTask.employee?.name || p.employeeName || parentTask.employeeName,
+      submissions: p.submissions || [],
+      timeline: p.timeline || [],
+    });
+  };
+
   const [employeeId, setEmployeeId] = useState('');
-  const [startTime, setStartTime] = useState('09:00 AM');
-  const [expectedEndDate, setExpectedEndDate] = useState('');
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
-  const [projectDetails, setProjectDetails] = useState<Record<number, { id?: number, taskDescription: string, changesGivenBy: string, changesSummary: string, priority: string, notes: string }>>({});
+  const [projectDetails, setProjectDetails] = useState<Record<number, {
+    id?: number;
+    taskDescription: string;
+    changesGivenBy: string;
+    changesSummary: string;
+    priority: string;
+    startTime?: string;
+    endTime?: string;
+    jobRoleType?: string;
+    customJobRole?: string;
+    proofRequired?: boolean;
+    expectedEndDate?: string;
+  }>>({});
 
   const handleProjectToggle = (projectId: number) => {
     setSelectedProjects(prev => {
@@ -42,7 +100,18 @@ export const Reports: React.FC = () => {
       } else {
         setProjectDetails(prev => ({
           ...prev,
-          [projectId]: { taskDescription: '', changesGivenBy: '', changesSummary: '', priority: 'MEDIUM', notes: '' }
+          [projectId]: {
+            taskDescription: '',
+            changesGivenBy: '',
+            changesSummary: '',
+            priority: 'MEDIUM',
+            startTime: '09:00',
+            endTime: '18:00',
+            jobRoleType: 'Frontend',
+            customJobRole: '',
+            proofRequired: false,
+            expectedEndDate: startDate || new Date().toISOString().split('T')[0],
+          }
         }));
         return [...prev, projectId];
       }
@@ -58,12 +127,28 @@ export const Reports: React.FC = () => {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!employeeId || selectedProjects.length === 0 || !expectedEndDate) return;
+    if (!employeeId || selectedProjects.length === 0) return;
 
     for (const pid of selectedProjects) {
       if (!projectDetails[pid]?.taskDescription) {
         alert('Please provide a task description for all selected projects.');
         return;
+      }
+      if (!projectDetails[pid]?.expectedEndDate) {
+        alert('Please provide an expected end date for all selected projects.');
+        return;
+      }
+      const st = projectDetails[pid]?.startTime;
+      const et = projectDetails[pid]?.endTime;
+      if (st && et) {
+        const startMin = parseTimeToMinutes(st);
+        const endMin = parseTimeToMinutes(et);
+        if (startMin !== null && endMin !== null) {
+          if (endMin <= startMin) {
+            alert('End Time must be after Start Time.');
+            return;
+          }
+        }
       }
     }
 
@@ -75,10 +160,22 @@ export const Reports: React.FC = () => {
         taskDescription: projectDetails[pid].taskDescription,
         changesGivenBy: projectDetails[pid].changesGivenBy || undefined,
         changesSummary: projectDetails[pid].changesSummary || undefined,
-        priority: projectDetails[pid].priority,
-        notes: projectDetails[pid].notes || undefined,
+        priority: projectDetails[pid].priority || 'MEDIUM',
         status: projectDetails[pid]?.id ? undefined : 'PENDING',
+        startTime: projectDetails[pid].startTime || '09:00 AM',
+        endTime: projectDetails[pid].endTime || '06:00 PM',
+        jobRoleType: projectDetails[pid].jobRoleType || 'Frontend',
+        customJobRole: projectDetails[pid].jobRoleType === 'Other' ? projectDetails[pid].customJobRole : undefined,
+        proofRequired: projectDetails[pid].proofRequired || false,
+        expectedEndDate: projectDetails[pid].expectedEndDate ? new Date(projectDetails[pid].expectedEndDate).toISOString() : undefined,
       }));
+
+      const projectExpectedDates = selectedProjects
+        .map(pid => projectDetails[pid]?.expectedEndDate ? new Date(projectDetails[pid].expectedEndDate) : null)
+        .filter(d => d !== null) as Date[];
+      const maxExpectedDate = projectExpectedDates.length > 0 
+        ? new Date(Math.max(...projectExpectedDates.map(d => d.getTime())))
+        : new Date(startDate);
 
       const emp = employees.find(e => e.id.toString() === employeeId);
       const empName = emp ? emp.name : 'Employee';
@@ -87,8 +184,8 @@ export const Reports: React.FC = () => {
         await tasksApi.update(editTask.id, {
           employeeId: parseInt(employeeId),
           startDate: new Date(startDate).toISOString(),
-          startTime,
-          expectedEndDate: new Date(expectedEndDate).toISOString(),
+          startTime: projectsPayload[0]?.startTime || '09:00 AM',
+          expectedEndDate: maxExpectedDate.toISOString(),
           projects: projectsPayload,
         });
         setSuccessPopupMessage(`Extra task allocated to ${empName}`);
@@ -96,8 +193,8 @@ export const Reports: React.FC = () => {
         await tasksApi.create({
           employeeId: parseInt(employeeId),
           startDate: new Date(startDate).toISOString(),
-          startTime,
-          expectedEndDate: new Date(expectedEndDate).toISOString(),
+          startTime: projectsPayload[0]?.startTime || '09:00 AM',
+          expectedEndDate: maxExpectedDate.toISOString(),
           projects: projectsPayload,
         });
         setSuccessPopupMessage(`Task assigned to ${empName}`);
@@ -108,8 +205,6 @@ export const Reports: React.FC = () => {
       setEmployeeId('');
       setSelectedProjects([]);
       setProjectDetails({});
-      setStartTime('09:00 AM');
-      setExpectedEndDate('');
       setShowCreateModal(false);
       await fetchDashboardData();
     } catch (err: any) {
@@ -130,10 +225,11 @@ export const Reports: React.FC = () => {
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
-      const [tasksRes, projectsRes, usersRes] = await Promise.all([
+      const [tasksRes, projectsRes, usersRes, leavesRes] = await Promise.all([
         tasksApi.list(),
         projectsApi.list(),
         usersApi.list({ role: 'EMPLOYEE' }),
+        leavesApi.list(),
       ]);
 
       // Flatten multi-project tasks
@@ -143,16 +239,92 @@ export const Reports: React.FC = () => {
           if (parentTask.projects && parentTask.projects.length > 0) {
             parentTask.projects.forEach((tp: any) => {
               flatTasks.push({
+                ...parentTask,
                 ...tp,
+                taskId: parentTask.id,
+                projectId: tp.projectId,
+                project: tp.project,
+                taskProjectId: tp.id,
+                taskDescription: tp.taskDescription,
+                changesGivenBy: tp.changesGivenBy,
+                changesSummary: tp.changesSummary,
+                status: tp.status,
+                delayReason: tp.delayReason,
+                blockedReason: tp.blockedReason,
+                completedWorkDescription: tp.completedWorkDescription,
+                completionPercentage: tp.completionPercentage,
+                notes: tp.notes,
+                acceptanceStatus: tp.acceptanceStatus,
+                rejectionReason: tp.rejectionReason,
+                screenshotUrl: tp.updates ? tp.updates.find((u: any) => u.screenshotUrl)?.screenshotUrl : null,
+                adminComment: tp.adminComment,
+                adminCommentUpdatedAt: tp.adminCommentUpdatedAt,
+                adminCommentUpdatedById: tp.adminCommentUpdatedById,
+                adminCommentUpdatedBy: tp.adminCommentUpdatedBy,
+                createdAt: tp.createdAt,
+                assignedByUserId: tp.assignedByUserId,
+                assignedBy: tp.assignedBy,
+                assignedToUserId: tp.assignedToUserId,
+                assignedTo: tp.assignedTo,
+                assignmentType: tp.assignmentType,
+                priority: tp.priority,
+                jobRoleType: tp.jobRoleType,
+                customJobRole: tp.customJobRole,
+                startTime: tp.startTime,
+                endTime: tp.endTime,
+                proofRequired: tp.proofRequired,
+                reviewStatus: tp.reviewStatus,
+                submissions: tp.submissions,
+                timeline: tp.timeline,
                 startDate: parentTask.startDate,
-                startTime: parentTask.startTime,
+                parentStartTime: parentTask.startTime,
                 expectedEndDate: parentTask.expectedEndDate,
                 employee: parentTask.employee,
                 parentTaskId: parentTask.id,
                 fullParentTask: parentTask,
-                screenshotUrl: tp.updates ? tp.updates.find((u: any) => u.screenshotUrl)?.screenshotUrl : null,
               });
             });
+          }
+        });
+      }
+
+      if (leavesRes.data && Array.isArray(leavesRes.data)) {
+        leavesRes.data.forEach((leave: any) => {
+          if (leave.status !== 'APPROVED') return;
+          const startVal = new Date(leave.startDate);
+          const endVal = new Date(leave.endDate);
+          let current = new Date(
+            startVal.getUTCFullYear(),
+            startVal.getUTCMonth(),
+            startVal.getUTCDate(),
+            0, 0, 0, 0
+          );
+          const end = new Date(
+            endVal.getUTCFullYear(),
+            endVal.getUTCMonth(),
+            endVal.getUTCDate(),
+            0, 0, 0, 0
+          );
+
+          while (current <= end) {
+            const dateCopy = new Date(current);
+            flatTasks.push({
+              id: `leave-${leave.id}-${dateCopy.toISOString().split('T')[0]}`,
+              startDate: dateCopy.toISOString(),
+              startTime: '-',
+              expectedEndDate: leave.endDate,
+              employee: leave.employee,
+              employeeName: leave.employee?.name || 'Unknown',
+              projectId: 0,
+              project: { name: 'LEAVE' },
+              taskDescription: leave.reason,
+              status: 'ON_LEAVE',
+              leaveType: leave.leaveType,
+              leaveReason: leave.reason,
+              parentTaskId: null,
+              fullParentTask: null,
+            });
+            current.setDate(current.getDate() + 1);
           }
         });
       }
@@ -216,18 +388,6 @@ export const Reports: React.FC = () => {
     if (existingTask) {
       const parentTask = existingTask.fullParentTask;
       setEditTask(parentTask);
-      setStartTime(parentTask.startTime || '09:00 AM');
-      try {
-        if (parentTask.expectedEndDate) {
-          const d = new Date(parentTask.expectedEndDate);
-          const tzoffset = d.getTimezoneOffset() * 60000;
-          setExpectedEndDate(new Date(d.getTime() - tzoffset).toISOString().split('T')[0]);
-        } else {
-          setExpectedEndDate('');
-        }
-      } catch (e) {
-        setExpectedEndDate('');
-      }
 
       const selProj: number[] = [];
       const projDetails: Record<number, any> = {};
@@ -240,7 +400,12 @@ export const Reports: React.FC = () => {
             changesGivenBy: p.changesGivenBy || '',
             changesSummary: p.changesSummary || '',
             priority: p.priority || 'MEDIUM',
-            notes: p.notes || ''
+            startTime: p.startTime || '09:00',
+            endTime: p.endTime || '18:00',
+            jobRoleType: p.jobRoleType || 'Frontend',
+            customJobRole: p.customJobRole || '',
+            proofRequired: p.proofRequired || false,
+            expectedEndDate: p.expectedEndDate ? new Date(p.expectedEndDate).toISOString().split('T')[0] : (parentTask.expectedEndDate ? new Date(parentTask.expectedEndDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
           };
         });
       }
@@ -265,20 +430,6 @@ export const Reports: React.FC = () => {
       setStartDate(new Date().toISOString().split('T')[0]);
     }
 
-    setStartTime(parentTask.startTime || '09:00 AM');
-
-    try {
-      if (parentTask.expectedEndDate) {
-        const d = new Date(parentTask.expectedEndDate);
-        const tzoffset = d.getTimezoneOffset() * 60000;
-        setExpectedEndDate(new Date(d.getTime() - tzoffset).toISOString().split('T')[0]);
-      } else {
-        setExpectedEndDate('');
-      }
-    } catch (e) {
-      setExpectedEndDate('');
-    }
-
     const selProj: number[] = [];
     const projDetails: Record<number, any> = {};
     if (parentTask.projects) {
@@ -290,7 +441,12 @@ export const Reports: React.FC = () => {
           changesGivenBy: p.changesGivenBy || '',
           changesSummary: p.changesSummary || '',
           priority: p.priority || 'MEDIUM',
-          notes: p.notes || ''
+          startTime: p.startTime || '09:00',
+          endTime: p.endTime || '18:00',
+          jobRoleType: p.jobRoleType || 'Frontend',
+          customJobRole: p.customJobRole || '',
+          proofRequired: p.proofRequired || false,
+          expectedEndDate: p.expectedEndDate ? new Date(p.expectedEndDate).toISOString().split('T')[0] : (parentTask.expectedEndDate ? new Date(parentTask.expectedEndDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
         };
       });
     }
@@ -374,7 +530,11 @@ export const Reports: React.FC = () => {
   }, [tasks, activeTab, searchQuery, filterProject, filterDate, filterMonth, filterYear, today, yesterday]);
 
   const groupedTasks = useMemo(() => {
-    const sorted = [...filteredTasks].sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    const sorted = [...filteredTasks].sort((a, b) => {
+      const timeB = new Date(b.createdAt || b.startDate).getTime();
+      const timeA = new Date(a.createdAt || a.startDate).getTime();
+      return timeB - timeA;
+    });
     const groups: { dateStr: string, displayDate: string, tasks: any[] }[] = [];
 
     sorted.forEach(t => {
@@ -407,9 +567,26 @@ export const Reports: React.FC = () => {
     switch (status) {
       case 'COMPLETED': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'IN_PROGRESS': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'PENDING_REVIEW': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'REVIEW_PENDING': return 'bg-violet-50 text-violet-700 border-violet-200';
       case 'DELAYED': return 'bg-rose-50 text-rose-700 border-rose-200';
       case 'BLOCKED': return 'bg-rose-100 text-rose-800 border-rose-300';
+      case 'ON_HOLD': return 'bg-slate-100 text-slate-600 border-slate-300';
       default: return 'bg-amber-50 text-amber-700 border-amber-200';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'IN_PROGRESS': return 'IN PROGRESS';
+      case 'PENDING_REVIEW': return 'IN PROGRESS';
+      case 'REVIEW_PENDING': return 'REVIEW PENDING';
+      case 'COMPLETED': return 'COMPLETED';
+      case 'DELAYED': return 'DELAYED';
+      case 'BLOCKED': return 'BLOCKED';
+      case 'ON_HOLD': return 'ON HOLD';
+      case 'PENDING': return 'PENDING';
+      default: return (status || '').replace(/_/g, ' ');
     }
   };
 
@@ -426,8 +603,6 @@ export const Reports: React.FC = () => {
               setEditTask(null);
               setEmployeeId('');
               setStartDate(new Date().toISOString().split('T')[0]);
-              setStartTime('09:00 AM');
-              setExpectedEndDate('');
               setSelectedProjects([]);
               setProjectDetails({});
               setShowCreateModal(true);
@@ -553,16 +728,33 @@ export const Reports: React.FC = () => {
                     <tr className="bg-purple-600 divide-x divide-purple-500">
                       <th className="md:sticky md:left-0 md:z-30 bg-purple-600 w-[100px] min-w-[100px] max-w-[100px] px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider md:outline md:outline-1 md:outline-purple-700 shadow-sm">Date</th>
                       <th className="md:sticky md:left-[100px] md:z-30 bg-purple-600 w-[150px] min-w-[150px] max-w-[150px] px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider md:outline md:outline-1 md:outline-purple-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Employee Name</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Role</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Project</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[250px]">Task</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Completion</th>
-                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Work Done Proof</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Start Time</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">End Time</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Task Type</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Assigned By</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Assigned To</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Proof Req</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Completion</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Expected End</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Delay (Y/N)</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[200px]">Delay Reason</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Carry Forward Count</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Last Carry Forward Date</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Overdue Days</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[250px]">Extra Note</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[250px]">Today's Work Summary</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Time Spent</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Blockers</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[250px]">Additional Notes</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Change Given By</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[200px]">Changes Summary</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Priority</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Work Done Proof</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider w-[200px]">Reject Reason</th>
+                      <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider">Review and Approve</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider text-right">Status</th>
                       <th className="px-4 py-6 text-[13px] font-extrabold text-white uppercase tracking-wider text-right">Action</th>
                     </tr>
@@ -571,77 +763,178 @@ export const Reports: React.FC = () => {
                     {groupedTasks.map(group => (
                       <React.Fragment key={group.dateStr}>
                         <tr className="bg-emerald-400 border-y border-emerald-700">
-                          <td colSpan={14} className="sticky left-0 z-20 bg-emerald-400 p-0 text-xs font-bold text-white text-left uppercase tracking-wider">
+                          <td colSpan={31} className="sticky left-0 z-10 bg-emerald-400 p-0 text-xs font-bold text-white text-left uppercase tracking-wider">
                             <div className="sticky left-4 px-3 py-3 inline-block">
                               {group.displayDate}
                             </div>
                           </td>
                         </tr>
-                        {group.tasks.map((t: any) => (
-                          <tr key={t.id} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400">
-                            <td className="md:sticky md:left-0 md:z-10 bg-white w-[100px] min-w-[100px] max-w-[100px] px-3 py-2.5 text-xs text-slate-500 font-medium whitespace-nowrap md:outline md:outline-1 md:outline-slate-400">{new Date(t.startDate).toLocaleDateString()}</td>
-                            <td className="md:sticky md:left-[100px] md:z-10 bg-white w-[150px] min-w-[150px] max-w-[150px] px-3 py-2.5 text-xs font-bold text-slate-800 whitespace-nowrap md:outline md:outline-1 md:outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">{t.employee?.name || 'N/A'}</td>
-                            <td className="px-3 py-2.5 text-xs text-indigo-700 font-bold whitespace-nowrap">{t.project?.name || 'N/A'}</td>
-                            <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-normal leading-relaxed">
-                              {t.changesGivenBy ? (
-                                <span className="text-amber-600 font-bold bg-amber-50 px-1 py-0.5 rounded">{t.taskDescription}</span>
-                              ) : (
-                                t.taskDescription
-                              )}
-                              {t.changesSummary && <span className="text-indigo-600 font-bold ml-1.5 block mt-1">{t.changesSummary}</span>}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs font-bold text-slate-700 whitespace-nowrap">{t.completionPercentage || 0}%</td>
-                            <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
-                              {t.screenshotUrl ? (
-                                <a href={`http://localhost:3000/${t.screenshotUrl}`} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-semibold bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 inline-block">
-                                  View
-                                </a>
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.startTime}</td>
-                            <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
-                              {new Date(t.expectedEndDate).toLocaleDateString()}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs font-bold text-slate-700 whitespace-nowrap">
-                              {t.status === 'DELAYED' ? <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100">Yes</span> : <span className="text-slate-400">No</span>}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed">
-                              {t.delayReason || <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed">
-                              {t.completedWorkDescription ? (
-                                <div><strong className="text-emerald-700 block mb-1">Work:</strong> {t.completedWorkDescription}</div>
-                              ) : t.blockedReason ? (
-                                <div><strong className="text-rose-700 block mb-1">Blocked:</strong> {t.blockedReason}</div>
-                              ) : t.notes ? (
-                                <div><strong className="text-slate-600 block mb-1">Note:</strong> {t.notes}</div>
-                              ) : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs text-rose-600 whitespace-normal leading-relaxed font-medium">
-                              {t.acceptanceStatus === 'REJECTED' ? t.rejectionReason : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
-                              {t.acceptanceStatus === 'REJECTED' ? (
-                                <span className="px-3 py-1.5 rounded-lg font-bold border inline-block bg-rose-50 text-rose-700 border-rose-200">
-                                  REJECTED
+                        {group.tasks.map((t: any) => {
+                          const isOnLeaveRow = t.status === 'ON_LEAVE';
+                          
+                          if (isOnLeaveRow) {
+                            return (
+                              <tr key={t.id} className="bg-red-50 hover:bg-red-100 transition-colors align-top divide-x divide-red-200 border-y-2 border-red-500">
+                                <td className="md:sticky md:left-0 md:z-10 bg-red-50 w-[100px] min-w-[100px] max-w-[100px] px-3 py-2.5 text-xs text-red-700 font-medium whitespace-nowrap md:outline md:outline-1 md:outline-red-200">{new Date(t.startDate).toLocaleDateString()}</td>
+                                <td className="md:sticky md:left-[100px] md:z-10 bg-red-50 w-[150px] min-w-[150px] max-w-[150px] px-3 py-2.5 text-xs font-bold text-red-900 whitespace-nowrap md:outline md:outline-1 md:outline-red-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">{t.employeeName}</td>
+                                <td className="px-3 py-2.5 text-xs text-red-700 font-bold whitespace-nowrap">LEAVE</td>
+                                <td colSpan={28} className="px-3 py-2.5 text-xs text-red-950 whitespace-normal leading-relaxed">
+                                  <strong className="block text-red-800 mb-1">Leave Type: {t.leaveType}</strong>
+                                  <span>Reason: {t.leaveReason}</span>
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return (
+                            <tr key={t.id} className="hover:bg-slate-50 transition-colors align-top divide-x divide-slate-400 bg-white">
+                              {/* 1. Date */}
+                              <td className="md:sticky md:left-0 md:z-10 bg-white w-[100px] min-w-[100px] max-w-[100px] px-3 py-2.5 text-xs text-slate-500 font-medium whitespace-nowrap md:outline md:outline-1 md:outline-slate-400">{new Date(t.startDate).toLocaleDateString()}</td>
+                              {/* 2. Employee Name */}
+                              <td className="md:sticky md:left-[100px] md:z-10 bg-white w-[150px] min-w-[150px] max-w-[150px] px-3 py-2.5 text-xs font-bold text-slate-800 whitespace-nowrap md:outline md:outline-1 md:outline-slate-400 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate">{t.employee?.name || t.employeeName || 'N/A'}</td>
+                              {/* 3. Role */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
+                                {t.jobRoleType === 'Other' ? t.customJobRole : (t.jobRoleType || 'N/A')}
+                              </td>
+                              {/* 4. Project */}
+                              <td className="px-3 py-2.5 text-xs text-indigo-700 font-bold whitespace-nowrap">{t.project?.name || 'N/A'}</td>
+                              {/* 5. Task */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-normal leading-relaxed min-w-[200px]">
+                                {t.taskDescription}
+                              </td>
+                              {/* 6. Start Time */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.startTime || 'N/A'}</td>
+                              {/* 7. End Time */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.endTime || 'N/A'}</td>
+                              {/* 8. Task Type */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{renderTaskTypeBadge(t.assignmentType)}</td>
+                              {/* 9. Assigned By */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.assignedBy?.name || 'Self'}</td>
+                              {/* 10. Assigned To */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.assignedTo?.name || t.employee?.name || 'N/A'}</td>
+                              {/* 11. Proof Req */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.proofRequired ? 'Yes' : 'No'}</td>
+                              {/* 12. Completion */}
+                              <td className="px-3 py-2.5 text-xs font-bold text-slate-700 whitespace-nowrap">{t.completionPercentage || 0}%</td>
+                              {/* 13. Expected End */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
+                                {new Date(t.expectedEndDate).toLocaleDateString()}
+                              </td>
+                              {/* 14. Delay (Y/N) */}
+                              <td className="px-3 py-2.5 text-xs font-bold text-slate-700 whitespace-nowrap">
+                                {t.status === 'DELAYED' ? <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100">Yes</span> : <span className="text-slate-400">No</span>}
+                              </td>
+                              {/* 15. Delay Reason */}
+                              <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
+                                {t.delayReason || <span className="text-slate-300">-</span>}
+                              </td>
+                              {/* 16. Carry Forward Count */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 font-medium whitespace-nowrap">
+                                {t.carryForwardCount ?? 0}
+                              </td>
+                              {/* 17. Last Carry Forward Date */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 font-medium whitespace-nowrap">
+                                {t.lastCarryForwardDate ? new Date(t.lastCarryForwardDate).toLocaleDateString() : <span className="text-slate-300">-</span>}
+                              </td>
+                              {/* 18. Overdue Days */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 font-medium whitespace-nowrap">
+                                {t.overdueDays > 0 ? (
+                                  <span className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100 font-bold">{t.overdueDays} Days</span>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              {/* 19. Extra Note */}
+                              <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
+                                {t.notes || <span className="text-slate-300">-</span>}
+                              </td>
+                              {/* 20. Today's Work Summary */}
+                              <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
+                                {t.completedWorkDescription || <span className="text-slate-300">-</span>}
+                              </td>
+                              {/* 21. Time Spent */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
+                                {t.timeSpent || t.submissions?.[0]?.timeSpent || '-'}
+                              </td>
+                              {/* 22. Blockers */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-normal min-w-[120px]">
+                                {t.blockers || t.submissions?.[0]?.blockers || '-'}
+                              </td>
+                              {/* 23. Additional Notes */}
+                              <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal min-w-[150px]">
+                                {t.submissions?.[0]?.notes || '-'}
+                              </td>
+                              {/* 24. Change Given By */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
+                                {t.changesGivenBy || '-'}
+                              </td>
+                              {/* 25. Changes Summary */}
+                              <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal min-w-[150px]">
+                                {t.changesSummary || '-'}
+                              </td>
+                              {/* 26. Priority */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getPriorityColor(t.priority)}`}>
+                                  {t.priority}
                                 </span>
-                              ) : t.acceptanceStatus === 'PENDING' ? (
-                                <span className="px-3 py-1.5 rounded-lg font-bold border inline-block bg-amber-50 text-amber-700 border-amber-200">
-                                  PENDING ACCEPTANCE
-                                </span>
-                              ) : (
-                                <span className={`px-3 py-1.5 rounded-lg font-bold border inline-block ${getStatusColor(t.status)}`}>
-                                  {(t.status || '').replace('_', ' ')}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
-                              <button onClick={() => handleEditInit(t.fullParentTask)} className="text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-100 transition-colors">
-                                Assign Extra Task
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                              {/* 27. Work Done Proof */}
+                              <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
+                                {t.screenshotUrl ? (
+                                  <a href={uploadsApi.getFileUrl(t.screenshotUrl)} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-semibold bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 inline-block">
+                                    View
+                                  </a>
+                                ) : t.submissions?.[0]?.proofs && t.submissions[0].proofs.length > 0 ? (
+                                  <div className="flex flex-col gap-1">
+                                    {t.submissions[0].proofs.map((proof: any) => (
+                                      <a key={proof.id} href={uploadsApi.getFileUrl(proof.filepath)} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-semibold bg-indigo-50 px-2 py-1 rounded border border-indigo-100 inline-block text-[10px]">
+                                        View Proof
+                                      </a>
+                                    ))}
+                                  </div>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              {/* 28. Reject Reason */}
+                              <td className="px-3 py-2.5 text-xs text-rose-600 whitespace-normal leading-relaxed font-medium min-w-[150px]">
+                                {t.acceptanceStatus === 'REJECTED' ? t.rejectionReason : <span className="text-slate-300">-</span>}
+                              </td>
+                              {/* 29. Review and Approve */}
+                              <td className="px-3 py-2.5 text-xs font-bold text-center whitespace-nowrap">
+                                {t.status === 'REVIEW_PENDING' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditModal(t, t.fullParentTask || t, 'approve')}
+                                    className="px-3 py-1 bg-purple-600 text-white hover:bg-purple-700 rounded-lg text-[10px] uppercase font-extrabold cursor-pointer"
+                                  >
+                                    Review
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+                              {/* 30. Status */}
+                              <td className="px-3 py-2.5 text-xs font-bold text-right whitespace-nowrap">
+                                {t.acceptanceStatus === 'REJECTED' ? (
+                                  <span className="px-3 py-1.5 rounded-lg border inline-block bg-rose-50 text-rose-700 border-rose-200">
+                                    REJECTED
+                                  </span>
+                                ) : t.acceptanceStatus === 'PENDING' ? (
+                                  <span className="px-3 py-1.5 rounded-lg border inline-block bg-amber-50 text-amber-700 border-amber-200">
+                                    PENDING ACCEPTANCE
+                                  </span>
+                                ) : (
+                                  <span className={`px-3 py-1.5 rounded-lg border inline-block ${getStatusColor(t.status)}`}>
+                                    {getStatusLabel(t.status)}
+                                  </span>
+                                )}
+                              </td>
+                              {/* 31. Action */}
+                              <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
+                                <button onClick={() => handleEditInit(t.fullParentTask || t)} className="text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-100 transition-colors">
+                                  Assign Extra Task
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </React.Fragment>
                     ))}
                   </tbody>
@@ -669,16 +962,17 @@ export const Reports: React.FC = () => {
 
       {/* CREATE MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 pb-4 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white sticky top-0 z-20 shrink-0">
               <h3 className="font-heading text-xl font-bold text-slate-800">{editTask ? 'Edit & Assign Extra Task' : 'Assign New Task'}</h3>
               <button onClick={() => { setShowCreateModal(false); setEditTask(null); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="space-y-6 text-left">
+            <form onSubmit={handleCreateSubmit} className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-6 text-left">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -714,34 +1008,7 @@ export const Reports: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Start Time *
-                  </label>
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  />
-                </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Expected End Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={expectedEndDate}
-                    min={startDate}
-                    onChange={(e) => setExpectedEndDate(e.target.value)}
-                    required
-                    className="block w-full rounded-xl bg-white border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
-                  />
-                </div>
-              </div>
 
               <div className="border-t border-slate-200 pt-6 text-left">
                 <label className="block text-sm font-bold text-slate-800 mb-3">Select Projects *</label>
@@ -773,22 +1040,21 @@ export const Reports: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Task Description *</label>
-                          <textarea
-                            value={projectDetails[pid]?.taskDescription || ''}
-                            onChange={(e) => handleProjectDetailChange(pid, 'taskDescription', e.target.value)}
-                            required
-                            placeholder={`What needs to be done for ${project?.name}?`}
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]"
+                          <textarea 
+                            value={projectDetails[pid]?.taskDescription || ''} 
+                            onChange={(e) => handleProjectDetailChange(pid, 'taskDescription', e.target.value)} 
+                            required 
+                            placeholder={`What needs to be done for ${project?.name}?`} 
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]" 
                           />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-
                           <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Priority</label>
-                            <select
-                              value={projectDetails[pid]?.priority || 'MEDIUM'}
-                              onChange={(e) => handleProjectDetailChange(pid, 'priority', e.target.value)}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 cursor-pointer"
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Priority *</label>
+                            <select 
+                              value={projectDetails[pid]?.priority || 'MEDIUM'} 
+                              onChange={(e) => handleProjectDetailChange(pid, 'priority', e.target.value)} 
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
                             >
                               <option value="LOW">LOW</option>
                               <option value="MEDIUM">MEDIUM</option>
@@ -796,22 +1062,94 @@ export const Reports: React.FC = () => {
                             </select>
                           </div>
                           <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By</label>
-                            <input
-                              type="text"
-                              value={projectDetails[pid]?.changesGivenBy || ''}
-                              onChange={(e) => handleProjectDetailChange(pid, 'changesGivenBy', e.target.value)}
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Job Role Type *</label>
+                            <select 
+                              value={projectDetails[pid]?.jobRoleType || 'Frontend'} 
+                              onChange={(e) => handleProjectDetailChange(pid, 'jobRoleType', e.target.value)} 
                               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                            >
+                              <option value="Frontend">Frontend</option>
+                              <option value="Backend">Backend</option>
+                              <option value="Full Stack">Full Stack</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {projectDetails[pid]?.jobRoleType === 'Other' && (
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Enter Role Name *</label>
+                            <input 
+                              type="text"
+                              required
+                              placeholder="UI/UX, Testing, DevOps, etc."
+                              value={projectDetails[pid]?.customJobRole || ''}
+                              onChange={(e) => handleProjectDetailChange(pid, 'customJobRole', e.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20"
+                            />
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time *</label>
+                            <TimePicker 
+                              value={projectDetails[pid]?.startTime || '09:00 AM'}
+                              onChange={(val) => handleProjectDetailChange(pid, 'startTime', val)}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">End Time *</label>
+                            <TimePicker 
+                              value={projectDetails[pid]?.endTime || '06:00 PM'}
+                              onChange={(val) => handleProjectDetailChange(pid, 'endTime', val)}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-1.5">Expected End Date *</label>
+                          <input
+                            type="date"
+                            required
+                            value={projectDetails[pid]?.expectedEndDate || ''}
+                            min={startDate}
+                            onChange={(e) => handleProjectDetailChange(pid, 'expectedEndDate', e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 py-1">
+                          <input 
+                            type="checkbox"
+                            id={`proof-req-${pid}`}
+                            checked={projectDetails[pid]?.proofRequired || false}
+                            onChange={(e) => handleProjectDetailChange(pid, 'proofRequired', e.target.checked as any)}
+                            className="w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500"
+                          />
+                          <label htmlFor={`proof-req-${pid}`} className="text-xs font-bold text-slate-500 cursor-pointer uppercase tracking-wider">
+                            Mandatory Work Proof Required
+                          </label>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By</label>
+                            <input 
+                              type="text" 
+                              value={projectDetails[pid]?.changesGivenBy || ''} 
+                              onChange={(e) => handleProjectDetailChange(pid, 'changesGivenBy', e.target.value)} 
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20" 
                             />
                           </div>
                         </div>
                         <div className="mt-4">
                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Admin Instructions (Changes Summary)</label>
-                          <textarea
-                            value={projectDetails[pid]?.changesSummary || ''}
-                            onChange={(e) => handleProjectDetailChange(pid, 'changesSummary', e.target.value)}
+                          <textarea 
+                            value={projectDetails[pid]?.changesSummary || ''} 
+                            onChange={(e) => handleProjectDetailChange(pid, 'changesSummary', e.target.value)} 
                             placeholder="Detail any changes, instructions, or feedback for the employee here..."
-                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]"
+                            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[60px]" 
                           />
                         </div>
                       </div>
@@ -820,7 +1158,9 @@ export const Reports: React.FC = () => {
                 </div>
               )}
 
-              <div className="flex gap-3 justify-end pt-3 border-t border-slate-200 mt-6">
+              </div>
+
+              <div className="flex gap-3 justify-end p-6 border-t border-slate-200 bg-white sticky bottom-0 z-20 shrink-0">
                 <button
                   type="button"
                   onClick={() => { setShowCreateModal(false); setEditTask(null); }}
@@ -839,6 +1179,23 @@ export const Reports: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ─── Edit Task Modal ─── */}
+      {editModalTask && (
+        <EditTaskModal
+          task={editModalTask}
+          initialTab={editModalInitialTab}
+          onClose={() => {
+            setEditModalTask(null);
+            setEditModalInitialTab(undefined);
+          }}
+          onSuccess={() => {
+            setEditModalTask(null);
+            setEditModalInitialTab(undefined);
+            fetchDashboardData();
+          }}
+        />
       )}
     </div>
   );

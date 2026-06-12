@@ -39,12 +39,20 @@ export const Login: React.FC = () => {
     };
   }, [resendCountdown]);
 
+  const [rememberMe, setRememberMe] = useState(() => {
+    return localStorage.getItem('gmark_remember_me') === 'true';
+  });
+
   const {
     register,
     handleSubmit,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: localStorage.getItem('gmark_email') || '',
+      password: localStorage.getItem('gmark_password') || '',
+    }
   });
 
   const onSubmit = async (values: LoginFormValues) => {
@@ -52,6 +60,15 @@ export const Login: React.FC = () => {
     setFormError(null);
     try {
       await login(values.email, values.password);
+      if (rememberMe) {
+        localStorage.setItem('gmark_remember_me', 'true');
+        localStorage.setItem('gmark_email', values.email);
+        localStorage.setItem('gmark_password', values.password);
+      } else {
+        localStorage.removeItem('gmark_remember_me');
+        localStorage.removeItem('gmark_email');
+        localStorage.removeItem('gmark_password');
+      }
       // Wait for auth context state to settle and profile load
       setTimeout(() => {
         navigate('/');
@@ -140,7 +157,7 @@ export const Login: React.FC = () => {
                   />
                 </div>
                 {errors.email && (
-                  <p className="mt-1.5 text-xs font-medium text-rose-500">{errors.email.message}</p>
+                  <p className="mt-1.5 text-xs font-medium text-rose-550">{errors.email.message}</p>
                 )}
               </div>
 
@@ -178,6 +195,19 @@ export const Login: React.FC = () => {
                 {errors.password && (
                   <p className="mt-1.5 text-xs font-medium text-rose-550">{errors.password.message}</p>
                 )}
+              </div>
+
+              <div className="flex items-center">
+                <input
+                  id="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+                <label htmlFor="remember-me" className="ml-2 block text-xs font-semibold text-slate-500 cursor-pointer uppercase tracking-wider">
+                  Remember me
+                </label>
               </div>
 
               <button

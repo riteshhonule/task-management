@@ -20,12 +20,24 @@ enum TaskStatus {
   DELAYED
   ON_HOLD
   BLOCKED
+  SUBMITTED
+  PENDING_REVIEW
+  REVIEW_PENDING
+  APPROVED
+  REVISION_REQUIRED
 }
 
 enum TaskPriority {
   LOW
   MEDIUM
   HIGH
+}
+
+enum TaskType {
+  NEW_TASK
+  CARRY_FORWARD_TASK
+  ADMIN_ASSIGNED_TASK
+  EMPLOYEE_ASSIGNED_TASK
 }
 
 enum MessageType {
@@ -50,6 +62,7 @@ model User {
   id                        Int                         @id @default(autoincrement())
   email                     String                      @unique
   mobileNumber              String?
+  jobRole                   String?
   password                  String
   name                      String
   role                      Role                        @default(EMPLOYEE)
@@ -70,6 +83,14 @@ model User {
   projectAllocations        ProjectAllocation[]         @relation("UserAllocations")
   notificationTokens        NotificationToken[]         @relation("UserTokens")
   passwordResetTokens       PasswordResetToken[]        @relation("UserPasswordResetTokens")
+  adminCommentUpdatedTasks  TaskProject[]               @relation("AdminCommentUpdatedTasks")
+  assignedByTasks           TaskProject[]               @relation("AssignedByTasks")
+  assignedToTasks           TaskProject[]               @relation("AssignedToTasks")
+  submissions               TaskSubmission[]            @relation("EmployeeSubmissions")
+  reviewedRevisions         TaskRevision[]              @relation("ReviewerRevisions")
+  reviewedApprovals         TaskApproval[]              @relation("ReviewerApprovals")
+  performedTimelines        TaskTimeline[]              @relation("PerformedTimeline")
+  approvedTasks             TaskProject[]               @relation("ApprovedTasksRelation")
 }
 
 model NotificationToken {
@@ -113,7 +134,7 @@ model Task {
   employeeId              Int
   employee                User           @relation("EmployeeTasks", fields: [employeeId], references: [id])
   startTime               String
-  expectedEndDate         DateTime
+  expectedEndDate         DateTime?
   projects                TaskProject[]  @relation("TaskProjectsRelation")
   carryForwardedFromId    Int?           @unique
   carryForwardedFrom      Task?          @relation("CarryForwardRelation", fields: [carryForwardedFromId], references: [id])
@@ -147,6 +168,32 @@ model TaskProject {
   updates                  TaskUpdate[]   @relation("TaskProjectUpdates")
   acceptanceStatus         String         @default("PENDING") // PENDING, ACCEPTED, REJECTED
   rejectionReason          String?
+  adminComment             String?
+  adminCommentUpdatedAt    DateTime?
+  adminCommentUpdatedById  Int?
+  adminCommentUpdatedBy    User?          @relation("AdminCommentUpdatedTasks", fields: [adminCommentUpdatedById], references: [id])
+  startTime                String?
+  endTime                  String?
+  jobRoleType              String?
+  customJobRole            String?
+  proofRequired            Boolean        @default(false)
+  assignedByUserId         Int?
+  assignedBy               User?          @relation("AssignedByTasks", fields: [assignedByUserId], references: [id])
+  assignedToUserId         Int?
+  assignedTo               User?          @relation("AssignedToTasks", fields: [assignedToUserId], references: [id])
+  assignmentType           String?
+  reviewStatus             String?        @default("PENDING")
+  submissions              TaskSubmission[] @relation("ProjectSubmissions")
+  timeline                 TaskTimeline[]   @relation("ProjectTimeline")
+  taskType                 TaskType       @default(NEW_TASK)
+  estimatedEffort          Float?
+  timeSpent                Float?
+  blockers                 String?
+  approvedById             Int?
+  approvedBy               User?          @relation("ApprovedTasksRelation", fields: [approvedById], references: [id])
+  approvedDate             DateTime?
+  approvalComment          String?
+  expectedEndDate          DateTime?
 }
 
 model TaskUpdate {
@@ -236,20 +283,22 @@ model MessageResponse {
 }
 
 model Leave {
-  id           Int         @id @default(autoincrement())
-  employeeId   Int
-  employee     User        @relation("EmployeeLeaves", fields: [employeeId], references: [id])
-  startDate    DateTime
-  endDate      DateTime
-  reason       String
-  status       LeaveStatus @default(PENDING)
-  approvedById Int?
-  approvedBy   User?       @relation("ApprovedLeaves", fields: [approvedById], references: [id])
-  remarks      String?
-  deletedAt    DateTime?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  attachments  Attachment[] @relation("LeaveAttachments")
+  id            Int         @id @default(autoincrement())
+  employeeId    Int
+  employee      User        @relation("EmployeeLeaves", fields: [employeeId], references: [id])
+  leaveType     String      @default("Casual Leave")
+  startDate     DateTime
+  endDate       DateTime
+  reason        String
+  attachmentUrl String?
+  status        LeaveStatus @default(APPROVED)
+  approvedById  Int?
+  approvedBy    User?       @relation("ApprovedLeaves", fields: [approvedById], references: [id])
+  remarks       String?
+  deletedAt     DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  attachments   Attachment[] @relation("LeaveAttachments")
 }
 
 model Attachment {
@@ -288,4 +337,74 @@ model PasswordResetToken {
   expiresAt DateTime
   used      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model TaskCarryForward {
+  id                     Int      @id @default(autoincrement())
+  taskId                 Int
+  employeeId             Int
+  fromDate               DateTime
+  toDate                 DateTime
+  reason                 String?
+  isDeadlineCarryForward Boolean  @default(false)
+  createdAt              DateTime @default(now())
+}
+
+model TaskSubmission {
+  id               Int                 @id @default(autoincrement())
+  taskProjectId    Int
+  taskProject      TaskProject         @relation("ProjectSubmissions", fields: [taskProjectId], references: [id], onDelete: Cascade)
+  employeeId       Int
+  employee         User                @relation("EmployeeSubmissions", fields: [employeeId], references: [id])
+  comment          String?
+  createdAt        DateTime            @default(now())
+  proofs           TaskProof[]         @relation("SubmissionProofs")
+  revisions        TaskRevision[]      @relation("SubmissionRevisions")
+  approvals        TaskApproval[]      @relation("SubmissionApprovals")
+  timeSpent        Float?
+  blockers         String?
+  notes            String?
+}
+
+model TaskProof {
+  id               Int            @id @default(autoincrement())
+  taskSubmissionId Int
+  taskSubmission   TaskSubmission @relation("SubmissionProofs", fields: [taskSubmissionId], references: [id], onDelete: Cascade)
+  filename         String
+  filepath         String
+  mimetype         String
+  size             Int
+  createdAt        DateTime       @default(now())
+}
+
+model TaskRevision {
+  id               Int            @id @default(autoincrement())
+  taskSubmissionId Int
+  taskSubmission   TaskSubmission @relation("SubmissionRevisions", fields: [taskSubmissionId], references: [id], onDelete: Cascade)
+  reviewerId       Int
+  reviewer         User           @relation("ReviewerRevisions", fields: [reviewerId], references: [id])
+  comment          String
+  createdAt        DateTime       @default(now())
+}
+
+model TaskApproval {
+  id               Int            @id @default(autoincrement())
+  taskSubmissionId Int
+  taskSubmission   TaskSubmission @relation("SubmissionApprovals", fields: [taskSubmissionId], references: [id], onDelete: Cascade)
+  reviewerId       Int
+  reviewer         User           @relation("ReviewerApprovals", fields: [reviewerId], references: [id])
+  comment          String?
+  createdAt        DateTime       @default(now())
+}
+
+model TaskTimeline {
+  id               Int            @id @default(autoincrement())
+  taskProjectId    Int
+  taskProject      TaskProject    @relation("ProjectTimeline", fields: [taskProjectId], references: [id], onDelete: Cascade)
+  action           String         // e.g., Task Created, Assigned, Started, Review Submitted, Proof Uploaded, Revision Requested, Proof Uploaded Again, Approved, Completed
+  performedById    Int
+  performedBy      User           @relation("PerformedTimeline", fields: [performedById], references: [id])
+  details          String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 }

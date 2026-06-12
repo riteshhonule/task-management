@@ -101,16 +101,23 @@ export const AdminDashboard: React.FC = () => {
       bg: 'bg-amber-500/5 border-amber-500/10',
       path: '/reports?tab=PENDING',
     },
+    {
+      name: 'Carried Forward Today',
+      value: metrics?.carriedForwardToday ?? 0,
+      icon: <CalendarDays size={20} className="text-purple-400" />,
+      bg: 'bg-purple-500/5 border-purple-500/10',
+      path: '/reports?tab=ALL',
+    },
   ];
 
   return (
     <div className="space-y-8 animate-in fade-in duration-200">
       <div>
         <h2 className="text-2xl font-heading font-extrabold text-slate-800 font-bold">Admin overview</h2>
-        <p className="text-xs text-slate-500">Monitor employee activities, task logs, and daily completions.</p>
+        <p className="text-xs text-slate-550">Monitor employee activities, task logs, and daily completions.</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-5">
         {statCards.map((card) => (
           <div
             key={card.name}

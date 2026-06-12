@@ -94,6 +94,12 @@ class VoiceNotificationService {
   }
 
   private processQueue() {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      if (!window.speechSynthesis.speaking && this.isSpeaking) {
+        this.isSpeaking = false;
+      }
+    }
+
     if (this.isSpeaking || this.queue.length === 0) return;
 
     const next = this.queue.shift();
@@ -102,7 +108,10 @@ class VoiceNotificationService {
     this.isSpeaking = true;
     const utterance = new SpeechSynthesisUtterance(next.text);
     
-    utterance.voice = this.getVoiceInstance();
+    const voice = this.getVoiceInstance();
+    if (voice) {
+      utterance.voice = voice;
+    }
     utterance.volume = this.settings.volume;
     utterance.rate = 0.95; // Slightly slower, medium speed
     utterance.pitch = 1.0;
@@ -112,7 +121,8 @@ class VoiceNotificationService {
       this.processQueue();
     };
 
-    utterance.onerror = () => {
+    utterance.onerror = (err) => {
+      console.error('SpeechSynthesisUtterance error:', err);
       this.isSpeaking = false;
       this.processQueue();
     };
