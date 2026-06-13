@@ -11,6 +11,26 @@ body {
   color: #0f172a;
   font-family: var(--font-sans);
   overflow-x: hidden;
+  /* Prevent layout shifting on mobile */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Prevent double-tap zoom on interactive elements (mobile) */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Prevent iOS zoom-in when focusing inputs (font-size must be >= 16px) */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="date"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* Custom Scrollbars */
@@ -30,6 +50,15 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 /* Animation Utilities */

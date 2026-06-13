@@ -59,12 +59,35 @@ export const EmployeeDashboard: React.FC = () => {
   // Forms state
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  const DRAFT_KEY = 'employee_task_draft';
+
+  const loadDraft = () => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return null;
+  };
+
+  const saveDraft = (selectedProjs: number[], projDetails: Record<number, any>) => {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ selectedProjects: selectedProjs, projectDetails: projDetails }));
+    } catch {}
+  };
+
+  const clearDraft = () => {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+  };
+
   // Create Task Form
   const [startDate, setStartDate] = useState(() => getLocalYYYYMMDD());
   const [startTime, setStartTime] = useState(() => new Date().toTimeString().slice(0, 5));
   
   // Multi-Project selection and details
-  const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
+  const [selectedProjects, setSelectedProjects] = useState<number[]>(() => {
+    const draft = loadDraft();
+    return draft?.selectedProjects || [];
+  });
   const [projectDetails, setProjectDetails] = useState<Record<number, {
     taskDescription: string;
     changesGivenBy: string;
@@ -76,7 +99,10 @@ export const EmployeeDashboard: React.FC = () => {
     endTime: string;
     proofRequired: boolean;
     expectedEndDate?: string;
-  }>>({});
+  }>>(() => {
+    const draft = loadDraft();
+    return draft?.projectDetails || {};
+  });
 
   const [showDuplicatePopup, setShowDuplicatePopup] = useState(false);
   
@@ -224,17 +250,18 @@ export const EmployeeDashboard: React.FC = () => {
   }, [todayTask, tasks, showCreateModal, showEveningReview, hasPromptedEveningReview]);
 
   const handleCreateTaskInit = () => {
-    const hasTodaySelfTask = todayTasks.some(t => !t.carryForwardedFromId);
-    if (hasTodaySelfTask) {
-      setShowDuplicatePopup(true);
+    const draft = loadDraft();
+    setEditTask(null);
+    setStartDate(getLocalYYYYMMDD());
+    setStartTime(new Date().toTimeString().slice(0, 5));
+    if (draft && draft.selectedProjects?.length > 0) {
+      setSelectedProjects(draft.selectedProjects);
+      setProjectDetails(draft.projectDetails || {});
     } else {
-      setEditTask(null);
-      setStartDate(getLocalYYYYMMDD());
-      setStartTime(new Date().toTimeString().slice(0, 5));
       setSelectedProjects([]);
       setProjectDetails({});
-      setShowCreateModal(true);
     }
+    setShowCreateModal(true);
   };
 
   const handleProjectToggle = (projectId: number) => {
@@ -244,33 +271,39 @@ export const EmployeeDashboard: React.FC = () => {
         const newDetails = { ...projectDetails };
         delete newDetails[projectId];
         setProjectDetails(newDetails);
+        saveDraft(next, newDetails);
         return next;
       } else {
-        setProjectDetails(prev => ({
-          ...prev,
-          [projectId]: { 
-            taskDescription: '', 
-            changesGivenBy: '', 
-            changesSummary: '',
-            priority: 'MEDIUM',
-            jobRoleType: 'Frontend',
-            customJobRole: '',
-            startTime: '09:00',
-            endTime: '18:00',
-            proofRequired: false,
-            expectedEndDate: startDate || getLocalYYYYMMDD(),
-          }
-        }));
-        return [...prev, projectId];
+        const newDetailEntry = { 
+          taskDescription: '', 
+          changesGivenBy: '', 
+          changesSummary: '',
+          priority: 'MEDIUM',
+          jobRoleType: 'Frontend',
+          customJobRole: '',
+          startTime: '09:00',
+          endTime: '18:00',
+          proofRequired: false,
+          expectedEndDate: startDate || getLocalYYYYMMDD(),
+        };
+        const newDetails = { ...projectDetails, [projectId]: newDetailEntry };
+        setProjectDetails(newDetails);
+        const next = [...prev, projectId];
+        saveDraft(next, newDetails);
+        return next;
       }
     });
   };
 
   const handleProjectDetailChange = (projectId: number, field: string, value: string) => {
-    setProjectDetails(prev => ({
-      ...prev,
-      [projectId]: { ...prev[projectId], [field]: value }
-    }));
+    setProjectDetails(prev => {
+      const updated = {
+        ...prev,
+        [projectId]: { ...prev[projectId], [field]: value }
+      };
+      saveDraft(selectedProjects, updated);
+      return updated;
+    });
   };
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -370,14 +403,11 @@ export const EmployeeDashboard: React.FC = () => {
       setShowCreateModal(false);
       setSelectedProjects([]);
       setProjectDetails({});
+      clearDraft();
       await fetchDashboardData();
     } catch (err: any) {
-      if (err.response?.status === 400) {
-        setShowCreateModal(false);
-        setShowDuplicatePopup(true);
-      } else {
-        console.error('Failed to create task:', err);
-      }
+      console.error('Failed to create task:', err);
+      alert(err.response?.data?.message || 'Failed to create task. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1270,17 +1300,25 @@ export const EmployeeDashboard: React.FC = () => {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-white sticky top-0 z-20 shrink-0">
-              <h3 className="font-heading text-xl font-bold text-slate-800">{editTask ? 'Edit Task' : "Create Today's Task"}</h3>
-              <button onClick={() => { setShowCreateModal(false); setEditTask(null); }} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/40 backdrop-blur-sm p-0 sm:p-4">
+          <div className="w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 max-h-[95vh] sm:max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex justify-between items-center p-4 sm:p-6 border-b border-slate-100 bg-white sticky top-0 z-20 shrink-0">
+              <div>
+                <h3 className="font-heading text-lg sm:text-xl font-bold text-slate-800">{editTask ? 'Edit Task' : "Create Today's Task"}</h3>
+                {!editTask && selectedProjects.length > 0 && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Draft saved</span>
+                    <button type="button" onClick={() => { clearDraft(); setSelectedProjects([]); setProjectDetails({}); }} className="text-[10px] text-slate-400 hover:text-rose-500 font-semibold transition-colors cursor-pointer">Clear draft</button>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => { setShowCreateModal(false); setEditTask(null); }} className="text-slate-400 hover:text-slate-600 cursor-pointer p-1">
                 <X size={20} />
               </button>
             </div>
             
             <form onSubmit={handleCreateTask} className="flex flex-col flex-1 overflow-hidden">
-              <div className="flex-1 overflow-y-auto p-6 space-y-6 text-left">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-left">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Date *</label>
                   <input 
@@ -1288,37 +1326,37 @@ export const EmployeeDashboard: React.FC = () => {
                     value={startDate} 
                     disabled
                     onChange={(e) => setStartDate(e.target.value)} 
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors text-sm font-medium bg-slate-100/80 text-slate-500 cursor-not-allowed opacity-80"
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-colors text-sm font-medium bg-slate-100/80 text-slate-500 cursor-not-allowed opacity-80"
                   />
                 </div>
 
-                <div className="border-t border-slate-200 pt-6">
+                <div className="border-t border-slate-200 pt-5">
                   <label className="block text-sm font-bold text-slate-800 mb-3">Select Projects *</label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
                     {projects.map(p => (
                       <label key={p.id} className={`flex items-center gap-2 p-3 rounded-xl border cursor-pointer transition-colors ${selectedProjects.includes(p.id) ? 'border-indigo-500 bg-indigo-50 text-indigo-800 shadow-sm' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600'}`}>
                         <input
                           type="checkbox"
                           checked={selectedProjects.includes(p.id)}
                           onChange={() => handleProjectToggle(p.id)}
-                          className="w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500"
+                          className="w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500 shrink-0"
                         />
-                        <span className="text-sm font-bold">{p.name}</span>
+                        <span className="text-sm font-bold leading-tight">{p.name}</span>
                       </label>
                     ))}
                   </div>
                 </div>
 
                 {selectedProjects.length > 0 && (
-                  <div className="space-y-6 pt-4 border-t border-slate-200">
+                  <div className="space-y-5 pt-4 border-t border-slate-200">
                     <h4 className="text-sm font-bold text-slate-800">Project Details</h4>
                     {selectedProjects.map(pid => {
                       const project = projects.find(p => p.id === pid);
                       return (
                         <div key={pid} className="p-4 rounded-xl border border-indigo-100 bg-white shadow-sm space-y-4">
                           <div className="flex items-center gap-2 border-b border-indigo-50 pb-2 mb-2">
-                            <CheckSquare className="text-indigo-600" size={16} />
-                            <h5 className="font-bold text-indigo-900">{project?.name}</h5>
+                            <CheckSquare className="text-indigo-600 shrink-0" size={16} />
+                            <h5 className="font-bold text-indigo-900 text-sm leading-tight">{project?.name}</h5>
                           </div>
                           <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Task Description *</label>
@@ -1327,17 +1365,17 @@ export const EmployeeDashboard: React.FC = () => {
                               onChange={(e) => handleProjectDetailChange(pid, 'taskDescription', e.target.value)} 
                               required 
                               placeholder={`What are you working on for ${project?.name}?`} 
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[80px]" 
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 min-h-[80px] focus:outline-none" 
                             />
                           </div>
 
-                          <div className="grid grid-cols-2 gap-4">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Priority *</label>
                               <select 
                                 value={projectDetails[pid]?.priority || 'MEDIUM'} 
                                 onChange={(e) => handleProjectDetailChange(pid, 'priority', e.target.value)} 
-                                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white focus:outline-none"
                               >
                                 <option value="LOW">LOW</option>
                                 <option value="MEDIUM">MEDIUM</option>
@@ -1349,7 +1387,7 @@ export const EmployeeDashboard: React.FC = () => {
                               <select 
                                 value={projectDetails[pid]?.jobRoleType || 'Frontend'} 
                                 onChange={(e) => handleProjectDetailChange(pid, 'jobRoleType', e.target.value)} 
-                                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white focus:outline-none"
                               >
                                 <option value="Frontend">Frontend</option>
                                 <option value="Backend">Backend</option>
@@ -1368,17 +1406,19 @@ export const EmployeeDashboard: React.FC = () => {
                                 placeholder="UI/UX, Testing, DevOps, etc."
                                 value={projectDetails[pid]?.customJobRole || ''}
                                 onChange={(e) => handleProjectDetailChange(pid, 'customJobRole', e.target.value)}
-                                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white focus:outline-none"
                               />
                             </div>
                           )}
 
-                          <div className="grid grid-cols-2 gap-4">
+                          {/* Start & End Time — responsive, stacks on mobile */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time *</label>
                               <TimePicker 
                                 value={projectDetails[pid]?.startTime || '09:00 AM'}
                                 onChange={(val) => handleProjectDetailChange(pid, 'startTime', val)}
+                                className="w-full"
                               />
                             </div>
                             <div>
@@ -1386,6 +1426,7 @@ export const EmployeeDashboard: React.FC = () => {
                               <TimePicker 
                                 value={projectDetails[pid]?.endTime || '06:00 PM'}
                                 onChange={(val) => handleProjectDetailChange(pid, 'endTime', val)}
+                                className="w-full"
                               />
                             </div>
                           </div>
@@ -1398,18 +1439,18 @@ export const EmployeeDashboard: React.FC = () => {
                               value={projectDetails[pid]?.expectedEndDate || ''}
                               min={startDate}
                               onChange={(e) => handleProjectDetailChange(pid, 'expectedEndDate', e.target.value)}
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white focus:outline-none"
                             />
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-100 pt-3">
                             <div>
                               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Changes Given By (Optional)</label>
                               <input 
                                 type="text" 
                                 value={projectDetails[pid]?.changesGivenBy || ''} 
                                 onChange={(e) => handleProjectDetailChange(pid, 'changesGivenBy', e.target.value)} 
-                                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white" 
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white focus:outline-none" 
                               />
                             </div>
                             <div>
@@ -1418,7 +1459,7 @@ export const EmployeeDashboard: React.FC = () => {
                                 type="text" 
                                 value={projectDetails[pid]?.changesSummary || ''} 
                                 onChange={(e) => handleProjectDetailChange(pid, 'changesSummary', e.target.value)} 
-                                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white" 
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white focus:outline-none" 
                               />
                             </div>
                           </div>
@@ -1429,9 +1470,9 @@ export const EmployeeDashboard: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex gap-3 justify-end p-6 border-t border-slate-200 bg-white sticky bottom-0 z-20 shrink-0">
-                <button type="button" onClick={() => { setShowCreateModal(false); setEditTask(null); }} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer">Cancel</button>
-                <button type="submit" disabled={isSubmitting || selectedProjects.length === 0} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 transition-colors flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50">
+              <div className="flex gap-3 justify-end p-4 sm:p-6 border-t border-slate-200 bg-white sticky bottom-0 z-20 shrink-0">
+                <button type="button" onClick={() => { setShowCreateModal(false); setEditTask(null); }} className="px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer">Cancel</button>
+                <button type="submit" disabled={isSubmitting || selectedProjects.length === 0} className="flex-1 sm:flex-none px-4 sm:px-5 py-2.5 rounded-xl text-sm font-bold bg-indigo-600 text-white hover:bg-indigo-500 transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50">
                   {isSubmitting && <Loader2 size={16} className="animate-spin" />} {editTask ? 'Next' : 'Submit Task'}
                 </button>
               </div>

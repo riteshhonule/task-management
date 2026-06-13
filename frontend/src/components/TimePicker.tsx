@@ -46,21 +46,21 @@ export const TimePicker: React.FC<TimePickerProps> = ({ value, onChange, classNa
   const minutes = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 
   return (
-    <div className={`flex gap-1.5 items-center ${className || ''}`}>
+    <div className={`flex gap-1 sm:gap-1.5 items-center w-full ${className || ''}`}>
       <select
         value={hour}
         onChange={(e) => setTime(e.target.value, minute, ampm)}
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white text-slate-800 focus:outline-none"
+        className="flex-1 min-w-0 rounded-xl border border-slate-200 px-1 sm:px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white text-slate-800 focus:outline-none"
       >
         {hours.map((h) => (
           <option key={h} value={h}>{h}</option>
         ))}
       </select>
-      <span className="text-slate-400 font-bold">:</span>
+      <span className="text-slate-400 font-bold text-xs shrink-0">:</span>
       <select
         value={minute}
         onChange={(e) => setTime(hour, e.target.value, ampm)}
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white text-slate-800 focus:outline-none"
+        className="flex-1 min-w-0 rounded-xl border border-slate-200 px-1 sm:px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white text-slate-800 focus:outline-none"
       >
         {minutes.map((m) => (
           <option key={m} value={m}>{m}</option>
@@ -69,7 +69,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({ value, onChange, classNa
       <select
         value={ampm}
         onChange={(e) => setTime(hour, minute, e.target.value)}
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white text-slate-800 focus:outline-none"
+        className="flex-1 min-w-0 rounded-xl border border-slate-200 px-1 sm:px-2 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/20 bg-white text-slate-800 focus:outline-none"
       >
         <option value="AM">AM</option>
         <option value="PM">PM</option>

@@ -53,28 +53,8 @@ export class TasksService {
     const nextDay = new Date(taskDate);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    // Only enforce one-task-per-day for employees creating tasks for themselves (NEW_TASK)
+    // Employees can create multiple tasks per day (no one-task-per-day restriction)
     const isSelfNewTask = currentUserId === targetEmployeeId && currentUserRole === Role.EMPLOYEE;
-    if (isSelfNewTask) {
-      const existingTask = await this.prisma.task.findFirst({
-        where: {
-          employeeId: targetEmployeeId,
-          startDate: { gte: taskDate, lt: nextDay },
-          carryForwardedFromId: null,
-          deletedAt: null,
-          projects: {
-            some: {
-              taskType: 'NEW_TASK',
-              assignedByUserId: currentUserId,
-              deletedAt: null,
-            }
-          }
-        },
-      });
-      if (existingTask) {
-        throw new BadRequestException('A task already exists for this employee on this date');
-      }
-    }
 
     if (!dto.projects || dto.projects.length === 0) {
       throw new BadRequestException('At least one project must be selected');
