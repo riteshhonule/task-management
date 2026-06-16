@@ -91,6 +91,12 @@ model User {
   reviewedApprovals         TaskApproval[]              @relation("ReviewerApprovals")
   performedTimelines        TaskTimeline[]              @relation("PerformedTimeline")
   approvedTasks             TaskProject[]               @relation("ApprovedTasksRelation")
+  chatMembers             ChatMember[]                @relation("UserChatMembers")
+  chatMessagesSent        ChatMessage[]               @relation("SenderChatMessages")
+  chatMessageReads        ChatMessageRead[]           @relation("UserMessageReads")
+  chatMessageReactions    ChatMessageReaction[]       @relation("UserMessageReactions")
+  chatPresence            ChatUserPresence?           @relation("UserChatPresence")
+  taskDiscussionComments  TaskDiscussionComment[]     @relation("UserDiscussionComments")
 }
 
 model NotificationToken {
@@ -194,6 +200,8 @@ model TaskProject {
   approvedDate             DateTime?
   approvalComment          String?
   expectedEndDate          DateTime?
+  sharedMessages          ChatMessage[]               @relation("SharedTaskMessages")
+  discussionComments      TaskDiscussionComment[]     @relation("TaskDiscussionComments")
 }
 
 model TaskUpdate {
@@ -408,3 +416,136 @@ model TaskTimeline {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 }
+
+enum ChatType {
+  DIRECT
+  GROUP
+}
+
+enum ChatRole {
+  MEMBER
+  ADMIN
+}
+
+model ChatConversation {
+  id           Int          @id @default(autoincrement())
+  type         ChatType     @default(DIRECT)
+  name         String?      // Null for direct chats
+  description  String?      // Optional group description
+  avatarUrl    String?      // Optional group avatar URL
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?
+  members      ChatMember[]
+  messages     ChatMessage[]
+}
+
+model ChatMember {
+  id             Int              @id @default(autoincrement())
+  conversationId Int
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         Int
+  user           User             @relation("UserChatMembers", fields: [userId], references: [id], onDelete: Cascade)
+  role           ChatRole         @default(MEMBER)
+  joinedAt       DateTime         @default(now())
+  deletedAt      DateTime?
+
+  @@unique([conversationId, userId])
+}
+
+model ChatMessage {
+  id             Int                   @id @default(autoincrement())
+  conversationId Int
+  conversation   ChatConversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       Int
+  sender         User                  @relation("SenderChatMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  content        String
+  isEdited       Boolean               @default(false)
+  isDeleted      Boolean               @default(false)
+  replyToId      Int?
+  replyTo        ChatMessage?          @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies        ChatMessage[]         @relation("MessageReplies")
+  
+  // Shared Task Integration
+  sharedTaskId   Int?
+  sharedTask     TaskProject?          @relation("SharedTaskMessages", fields: [sharedTaskId], references: [id])
+  
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  deletedAt      DateTime?
+  
+  reads          ChatMessageRead[]
+  reactions      ChatMessageReaction[]
+  attachments    ChatAttachment[]
+}
+
+model ChatMessageRead {
+  id        Int         @id @default(autoincrement())
+  messageId Int
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User        @relation("UserMessageReads", fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime    @default(now())
+
+  @@unique([messageId, userId])
+}
+
+model ChatMessageReaction {
+  id        Int         @id @default(autoincrement())
+  messageId Int
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User        @relation("UserMessageReactions", fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String      // Emoji character or text
+  createdAt DateTime    @default(now())
+
+  @@unique([messageId, userId, emoji])
+}
+
+model ChatAttachment {
+  id        Int         @id @default(autoincrement())
+  messageId Int
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  filename  String
+  filepath  String
+  mimetype  String
+  size      Int
+  createdAt DateTime    @default(now())
+}
+
+model ChatUserPresence {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  user      User     @relation("UserChatPresence", fields: [userId], references: [id], onDelete: Cascade)
+  isOnline  Boolean  @default(false)
+  lastSeen  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TaskDiscussionComment {
+  id            Int                        @id @default(autoincrement())
+  taskProjectId Int
+  taskProject   TaskProject                @relation("TaskDiscussionComments", fields: [taskProjectId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          User                       @relation("UserDiscussionComments", fields: [userId], references: [id], onDelete: Cascade)
+  content       String
+  replyToId     Int?
+  replyTo       TaskDiscussionComment?     @relation("CommentReplies", fields: [replyToId], references: [id])
+  replies       TaskDiscussionComment[]    @relation("CommentReplies")
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+  deletedAt     DateTime?
+  attachments   TaskDiscussionAttachment[]
+}
+
+model TaskDiscussionAttachment {
+  id        Int                   @id @default(autoincrement())
+  commentId Int
+  comment   TaskDiscussionComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  filename  String
+  filepath  String
+  mimetype  String
+  size      Int
+  createdAt DateTime              @default(now())
+}
+

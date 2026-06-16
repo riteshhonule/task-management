@@ -15,6 +15,7 @@ import {
   Bell,
   X,
   ClipboardList,
+  MessageSquare,
 } from 'lucide-react';
 
 import sidebarLogo from '../assets/sidebar-logo.png';
@@ -32,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const menuItems: { path: string; name: string; icon: React.ReactNode; disabled?: boolean }[] = isAdmin
     ? [
       { path: '/admin', name: 'Overview', icon: <LayoutDashboard size={18} /> },
+      { path: '/chat', name: 'Chat Room', icon: <MessageSquare size={18} /> },
       { path: '/reports', name: 'Daily Reviews', icon: <FileSpreadsheet size={18} /> },
       { path: '/employees', name: 'Employees', icon: <Users size={18} /> },
       { path: '/projects', name: 'Projects', icon: <FolderKanban size={18} /> },
@@ -46,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
     ]
     : [
       { path: '/dashboard', name: 'My Tasks', icon: <LayoutDashboard size={18} /> },
+      { path: '/chat', name: 'Chat Room', icon: <MessageSquare size={18} /> },
       { path: '/allocated-projects', name: 'Allocated Projects', icon: <FolderKanban size={18} /> },
       { path: '/assign-task', name: 'Assign Task', icon: <ClipboardList size={18} /> },
       { path: '/assign-tasks', name: 'Delegate Tasks', icon: <CheckSquare size={18} /> },

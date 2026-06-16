@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X, CheckCircle, Clock, RotateCcw, Upload, FileText,
   History, GitBranch, User, Calendar, Briefcase,
   Star, Eye, Download, Loader2, Send, ThumbsUp, ThumbsDown, BadgeCheck,
-  ClipboardList, Info, AlertCircle, Image
+  ClipboardList, Info, AlertCircle, Image, MessageSquare
 } from 'lucide-react';
-import { tasksApi, uploadsApi } from '../services/api';
+import { tasksApi, uploadsApi, taskDiscussionApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ interface EditTaskModalProps {
   task: TaskProject;
   onClose: () => void;
   onSuccess: () => void;
-  initialTab?: 'details' | 'review' | 'approve' | 'history' | 'timeline';
+  initialTab?: 'details' | 'review' | 'approve' | 'history' | 'timeline' | 'discussion';
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -198,6 +198,100 @@ const SectionHeader: React.FC<{ title: string }> = ({ title }) => (
   </div>
 );
 
+const AttachmentRenderer: React.FC<{ att: any }> = ({ att }) => {
+  const [loadError, setLoadError] = useState(false);
+  const url = uploadsApi.getFileUrl(att.filepath);
+  const mimetype = att.mimetype || '';
+  const filename = att.filename || '';
+
+  const lowercaseFilename = filename.toLowerCase();
+  const isImgExtension = lowercaseFilename.endsWith('.jpg') || 
+                         lowercaseFilename.endsWith('.jpeg') || 
+                         lowercaseFilename.endsWith('.png') || 
+                         lowercaseFilename.endsWith('.gif') || 
+                         lowercaseFilename.endsWith('.webp') || 
+                         lowercaseFilename.endsWith('.bmp');
+                         
+  const isImg = (mimetype.startsWith('image/') || isImgExtension || (!mimetype && !filename.includes('.'))) && !loadError;
+  const isVideo = mimetype.startsWith('video/') || lowercaseFilename.endsWith('.mp4') || lowercaseFilename.endsWith('.webm') || lowercaseFilename.endsWith('.mov');
+  const isPdf = mimetype === 'application/pdf' || lowercaseFilename.endsWith('.pdf');
+
+  if (isImg) {
+    return (
+      <div className="w-full max-w-[360px] text-[10px]">
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="block max-h-48 rounded-lg overflow-hidden border border-slate-200 shadow-sm hover:opacity-95 transition-opacity bg-slate-50"
+        >
+          <img
+            src={url}
+            alt={filename}
+            onError={() => setLoadError(true)}
+            className="w-full h-full object-contain max-h-48"
+          />
+        </a>
+      </div>
+    );
+  }
+
+  if (isVideo) {
+    return (
+      <div className="w-full max-w-[360px] text-[10px]">
+        <div className="rounded-lg overflow-hidden border border-slate-200 bg-black shadow-sm">
+          <video controls className="w-full max-h-60 object-contain" src={url} />
+        </div>
+      </div>
+    );
+  }
+
+  if (isPdf) {
+    return (
+      <div className="w-full max-w-[360px] text-[10px]">
+        <div className="flex flex-col gap-1 w-full">
+          <iframe
+            src={url}
+            className="w-full h-60 rounded-lg border border-slate-200 bg-white"
+            title={filename}
+          />
+          <a
+            href={url}
+            download
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-between gap-2 p-1.5 bg-white border border-slate-200 rounded-lg text-slate-655 hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-1.5 truncate">
+              <FileText size={12} className="text-red-500 shrink-0" />
+              <span className="truncate font-semibold">{filename}</span>
+            </div>
+            <span className="text-[10px] text-indigo-650 font-bold shrink-0">Download</span>
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full max-w-[360px] text-[10px]">
+      <a
+        href={url}
+        download
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center justify-between gap-2 p-1.5 bg-white border border-slate-200 rounded-lg text-slate-655 hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center gap-1.5 truncate">
+          <FileText size={12} className="text-indigo-500 shrink-0" />
+          <span className="truncate font-semibold">{filename}</span>
+        </div>
+        <span className="text-[10px] text-indigo-655 font-bold shrink-0">Download</span>
+      </a>
+    </div>
+  );
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export const EditTaskModal: React.FC<EditTaskModalProps> = ({ task, onClose, onSuccess, initialTab }) => {
   const { user } = useAuth();
@@ -230,7 +324,16 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({ task, onClose, onS
 
   // Start on appropriate tab
   const defaultTab = showApproveTab && task.status === 'REVIEW_PENDING' ? 'approve' : 'details';
-  const [activeTab, setActiveTab] = useState<'details' | 'review' | 'approve' | 'history' | 'timeline'>(initialTab || defaultTab);
+  const [activeTab, setActiveTab] = useState<'details' | 'review' | 'approve' | 'history' | 'timeline' | 'discussion'>(initialTab || defaultTab);
+
+  // Discussion / Comments state
+  const [comments, setComments] = useState<any[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentContent, setCommentContent] = useState('');
+  const [replyingComment, setReplyingComment] = useState<any | null>(null);
+  const [commentAttachments, setCommentAttachments] = useState<any[]>([]);
+  const [uploadingCommentAttachment, setUploadingCommentAttachment] = useState(false);
+  const commentFileInputRef = useRef<HTMLInputElement>(null);
 
   // Work Review state
   const [reviewStatus, setReviewStatus] = useState(task.status || 'IN_PROGRESS');
@@ -909,11 +1012,242 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({ task, onClose, onS
     );
   };
 
+  // ─── Discussion Effects & Helpers ──────────────────────────────────────────
+  const loadComments = async () => {
+    const taskProjId = task.id || task.taskProjectId;
+    if (!taskProjId) return;
+    setLoadingComments(true);
+    try {
+      const res = await taskDiscussionApi.getComments(taskProjId);
+      setComments(res.data.comments || []);
+    } catch (err) {
+      console.error('Failed to load comments:', err);
+    } finally {
+      setLoadingComments(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'discussion') {
+      loadComments();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handleSyncTasks = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const taskProjId = task.id || task.taskProjectId;
+      if (customEvent.detail?.taskProjectId === taskProjId) {
+        loadComments();
+      }
+    };
+    window.addEventListener('sync-tasks', handleSyncTasks);
+    return () => {
+      window.removeEventListener('sync-tasks', handleSyncTasks);
+    };
+  }, [task.id, task.taskProjectId]);
+
+  const handleCommentFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploadingCommentAttachment(true);
+    try {
+      const file = files[0];
+      const res = await uploadsApi.upload(file);
+      setCommentAttachments(prev => [
+        ...prev,
+        {
+          filename: file.name,
+          filepath: res.data.path || res.data.url,
+          mimetype: file.type,
+          size: file.size,
+        }
+      ]);
+    } catch (err) {
+      console.error('Failed to upload attachment:', err);
+      alert('Failed to upload attachment.');
+    } finally {
+      setUploadingCommentAttachment(false);
+      if (commentFileInputRef.current) commentFileInputRef.current.value = '';
+    }
+  };
+
+  const handlePostComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const taskProjId = task.id || task.taskProjectId;
+    if (!taskProjId || (!commentContent.trim() && commentAttachments.length === 0)) return;
+
+    try {
+      await taskDiscussionApi.addComment(taskProjId, {
+        content: commentContent.trim(),
+        replyToId: replyingComment?.id,
+        attachments: commentAttachments,
+      });
+      setCommentContent('');
+      setReplyingComment(null);
+      setCommentAttachments([]);
+      loadComments();
+      onSuccess();
+    } catch (err) {
+      console.error('Failed to post comment:', err);
+      alert('Failed to post comment.');
+    }
+  };
+
+  const renderDiscussion = () => {
+    return (
+      <div className="space-y-4 flex flex-col h-[400px]">
+        {/* Comment Thread */}
+        <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 scrollbar-thin">
+          {loadingComments && comments.length === 0 ? (
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="animate-spin text-indigo-500" size={24} />
+            </div>
+          ) : comments.length === 0 ? (
+            <div className="text-center py-16 text-slate-500">
+              <MessageSquare className="mx-auto text-slate-350 mb-2" size={32} />
+              <p className="text-xs font-bold uppercase tracking-wider">No comments yet</p>
+              <p className="text-[11px] text-slate-400 mt-1">Be the first to start the discussion for this task.</p>
+            </div>
+          ) : (
+            comments.map((comm) => {
+              return (
+                <div key={comm.id} className="flex gap-3 items-start animate-in fade-in duration-200">
+                  <div className="h-8 w-8 rounded-lg bg-indigo-50 border border-indigo-150 flex items-center justify-center font-bold text-indigo-650 text-xs shrink-0 shadow-sm">
+                    {comm.user?.name?.substring(0, 2).toUpperCase() || 'U'}
+                  </div>
+                  <div className="flex-1 min-w-0 bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 hover:border-slate-300 transition-colors relative group">
+                    <div className="flex items-baseline justify-between mb-1">
+                      <span className="font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                        {comm.user?.name}
+                        {comm.user?.role === 'ADMIN' && (
+                          <span className="text-[8px] bg-purple-105 text-purple-700 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">Admin</span>
+                        )}
+                      </span>
+                      <span className="text-[9px] text-slate-400 font-bold">{fmt(comm.createdAt)}</span>
+                    </div>
+
+                    {comm.replyTo && (
+                      <div className="mb-2 bg-white/70 border border-slate-250 p-2 rounded-xl text-[11px] text-slate-500 leading-snug">
+                        <span className="font-bold text-indigo-600 block mb-0.5">Replying to {comm.replyTo.user?.name}:</span>
+                        {comm.replyTo.content}
+                      </div>
+                    )}
+
+                    <p className="text-xs text-slate-700 font-medium leading-relaxed whitespace-pre-wrap">{comm.content}</p>
+
+                    {comm.attachments && comm.attachments.length > 0 && (
+                      <div className="mt-2.5 space-y-2.5 border-t border-slate-200/60 pt-2">
+                        {comm.attachments.map((att: any) => (
+                          <AttachmentRenderer key={att.id} att={att} />
+                        ))}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setReplyingComment(comm)}
+                      className="absolute right-3.5 top-3.5 hidden group-hover:flex items-center gap-1 text-[10px] font-bold text-indigo-650 hover:text-indigo-800 transition-colors cursor-pointer"
+                    >
+                      Reply
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Input Form */}
+        <form onSubmit={handlePostComment} className="border-t border-slate-200 pt-3.5 space-y-2.5">
+          {replyingComment && (
+            <div className="flex items-center justify-between bg-indigo-50/70 border border-indigo-150 rounded-xl px-3 py-1.5 text-[10px] text-indigo-800 animate-in slide-in-from-bottom duration-200">
+              <span className="truncate">Replying to <span className="font-bold">{replyingComment.user?.name}</span></span>
+              <button
+                type="button"
+                onClick={() => setReplyingComment(null)}
+                className="p-0.5 hover:bg-indigo-100 rounded text-indigo-600 transition-colors cursor-pointer"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
+          {commentAttachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {commentAttachments.map((att, i) => {
+                const isImg = att.mimetype?.startsWith('image/');
+                const url = uploadsApi.getFileUrl(att.filepath);
+                return (
+                  <div key={i} className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1 text-[10px] text-slate-655 shadow-sm">
+                    {isImg ? (
+                      <div className="h-5 w-5 rounded overflow-hidden border border-slate-200 shrink-0">
+                        <img src={url} alt={att.filename} className="h-full w-full object-cover" />
+                      </div>
+                    ) : (
+                      <FileText size={11} className="text-slate-400 shrink-0" />
+                    )}
+                    <span className="truncate max-w-[120px] font-bold">{att.filename}</span>
+                    <button
+                      type="button"
+                      onClick={() => setCommentAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                      className="p-0.5 hover:bg-slate-150 rounded text-slate-455 hover:text-rose-500 transition-colors cursor-pointer shrink-0"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <input
+              type="file"
+              ref={commentFileInputRef}
+              onChange={handleCommentFileChange}
+              className="hidden"
+            />
+            <button
+              type="button"
+              disabled={uploadingCommentAttachment}
+              onClick={() => commentFileInputRef.current?.click()}
+              className="p-2.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:border-slate-300 text-slate-550 rounded-xl transition-all cursor-pointer relative shrink-0"
+              title="Attach File"
+            >
+              {uploadingCommentAttachment ? (
+                <Loader2 size={15} className="animate-spin text-slate-400" />
+              ) : (
+                <Upload size={15} />
+              )}
+            </button>
+
+            <input
+              type="text"
+              placeholder="Write a comment..."
+              value={commentContent}
+              onChange={e => setCommentContent(e.target.value)}
+              className="flex-1 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 placeholder-slate-450 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/10 font-semibold shadow-sm transition-all"
+            />
+
+            <button
+              type="submit"
+              className="px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all shadow-md shadow-indigo-600/10 flex items-center justify-center shrink-0 cursor-pointer text-xs font-bold"
+            >
+              Post
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  };
+
   // ─── Tabs config (role-based) ─────────────────────────────────────────────
   const TABS = [
     { id: 'details' as const, label: 'Task Details', icon: <Info size={13} />, visible: true },
     { id: 'review' as const, label: "Work Review", icon: <ClipboardList size={13} />, visible: showWorkReviewTab },
     { id: 'approve' as const, label: 'Review & Approve', icon: <BadgeCheck size={13} />, visible: showApproveTab },
+    { id: 'discussion' as const, label: 'Discussion', icon: <MessageSquare size={13} />, visible: true },
     { id: 'history' as const, label: 'History', icon: <History size={13} />, visible: true },
     { id: 'timeline' as const, label: 'Timeline', icon: <GitBranch size={13} />, visible: true },
   ].filter(t => t.visible);
@@ -922,6 +1256,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({ task, onClose, onS
     details: renderDetails(),
     review: renderWorkReview(),
     approve: renderApprove(),
+    discussion: renderDiscussion(),
     history: renderHistory(),
     timeline: renderTimeline(),
   };

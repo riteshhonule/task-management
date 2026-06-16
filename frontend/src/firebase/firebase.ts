@@ -56,7 +56,7 @@ export const requestForToken = async () => {
 
 export const onMessageListener = (callback: (payload: any) => void) => {
   if (!messaging) return () => {};
-  return onMessage(messaging, (payload) => {
+  return onMessage(messaging, (payload: any) => {
     callback(payload);
   });
 };

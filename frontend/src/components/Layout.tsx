@@ -7,9 +7,19 @@ import { messagesApi, usersApi, tasksApi } from '../services/api';
 import { AlertTriangle, MessageSquare, X, Send, User, CheckCheck, AlertCircle, KeyRound } from 'lucide-react';
 import { GlobalNotificationPopup } from './GlobalNotificationPopup';
 
+import { useDispatch } from 'react-redux';
+import { setCredentials } from '../redux/slices/authSlice';
+
 export const Layout: React.FC = () => {
   const { token, user, loading, refreshProfile } = useAuth();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    if (token && user) {
+      dispatch(setCredentials({ user: user as any, token }));
+    }
+  }, [token, user, dispatch]);
 
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);

@@ -131,7 +131,43 @@ export const uploadsApi = {
       },
     });
   },
-  getFileUrl: (path: string) => `${API_URL}/${path}`,
+  getFileUrl: (path: string) => {
+    if (!path) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    const cleanPath = path.startsWith('uploads/') ? path : `uploads/${path}`;
+    return `${API_URL}/${cleanPath}`;
+  },
+};
+
+// Chat Service endpoints
+export const chatApi = {
+  listConversations: (search?: string) => apiClient.get('/chat/conversations', { params: { search } }),
+  createConversation: (data: { type: 'DIRECT' | 'GROUP'; userIds: number[]; name?: string; description?: string; avatarUrl?: string }) =>
+    apiClient.post('/chat/conversations', data),
+  getMessages: (conversationId: number, params?: { limit?: number; cursor?: number }) =>
+    apiClient.get(`/chat/conversations/${conversationId}/messages`, { params }),
+  markAsRead: (conversationId: number) => apiClient.post(`/chat/conversations/${conversationId}/read`),
+  updateGroup: (conversationId: number, data: { name?: string; description?: string; avatarUrl?: string }) =>
+    apiClient.put(`/chat/conversations/${conversationId}`, data),
+  addMembers: (conversationId: number, data: { userIds: number[] }) =>
+    apiClient.post(`/chat/conversations/${conversationId}/members`, data),
+  removeMember: (conversationId: number, userId: number) =>
+    apiClient.delete(`/chat/conversations/${conversationId}/members/${userId}`),
+  toggleReaction: (messageId: number, emoji: string) =>
+    apiClient.post(`/chat/messages/${messageId}/react`, { emoji }),
+  editMessage: (messageId: number, content: string) =>
+    apiClient.put(`/chat/messages/${messageId}`, { content }),
+  deleteMessage: (messageId: number) =>
+    apiClient.delete(`/chat/messages/${messageId}`),
+};
+
+// Task Discussion endpoints
+export const taskDiscussionApi = {
+  getComments: (taskProjectId: number) => apiClient.get(`/task-discussion/${taskProjectId}/comments`),
+  addComment: (taskProjectId: number, data: { content: string; replyToId?: number; attachments?: any[] }) =>
+    apiClient.post(`/task-discussion/${taskProjectId}/comments`, data),
 };
 
 export default apiClient;

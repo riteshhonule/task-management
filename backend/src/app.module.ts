@@ -14,6 +14,9 @@ import { ReportsModule } from './reports/reports.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { ConfigModule } from '@nestjs/config';
+import { ChatModule } from './chat/chat.module';
+import { PresenceModule } from './presence/presence.module';
+import { TaskDiscussionModule } from './task-discussion/task-discussion.module';
 
 @Module({
   imports: [
@@ -30,6 +33,9 @@ import { ConfigModule } from '@nestjs/config';
     ReportsModule,
     UploadsModule,
     FirebaseModule,
+    ChatModule,
+    PresenceModule,
+    TaskDiscussionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

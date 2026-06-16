@@ -18,7 +18,9 @@ import { Analytics } from './pages/Analytics';
 import { AllocatedProjects } from './pages/AllocatedProjects';
 import { NotificationsModule } from './pages/NotificationsModule';
 import { ResetPassword } from './pages/ResetPassword';
-
+import { Provider } from 'react-redux';
+import { store } from './redux/store';
+import { Chat } from './pages/Chat';
 
 // HomeRedirect component directs users based on auth role
 const HomeRedirect: React.FC = () => {
@@ -33,44 +35,46 @@ const HomeRedirect: React.FC = () => {
 
 function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          {/* Public Login Route */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+    <Provider store={store}>
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            {/* Public Login Route */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
-          {/* Secure Layout Routes */}
-          <Route path="/" element={<Layout />}>
-            <Route index element={<HomeRedirect />} />
-            
-            {/* Employee Views */}
-            <Route path="dashboard" element={<EmployeeDashboard />} />
-            <Route path="allocated-projects" element={<AllocatedProjects />} />
-            <Route path="change-password" element={<ChangePassword />} />
-            <Route path="assign-task" element={<EmployeeAssignTask />} />
+            {/* Secure Layout Routes */}
+            <Route path="/" element={<Layout />}>
+              <Route index element={<HomeRedirect />} />
+              
+              {/* Employee Views */}
+              <Route path="dashboard" element={<EmployeeDashboard />} />
+              <Route path="allocated-projects" element={<AllocatedProjects />} />
+              <Route path="change-password" element={<ChangePassword />} />
+              <Route path="assign-task" element={<EmployeeAssignTask />} />
 
+              {/* Admin Views */}
+              <Route path="admin" element={<AdminDashboard />} />
+              <Route path="employees" element={<Employees />} />
+              <Route path="projects" element={<Projects />} />
+              <Route path="assign-tasks" element={<AssignTasks />} />
+              <Route path="messages" element={<Messages />} />
+              
+              {/* Shared Views */}
+              <Route path="announcements" element={<Announcements />} />
+              <Route path="leaves" element={<Leaves />} />
+              <Route path="reports" element={<Reports />} />
+              <Route path="analytics" element={<Analytics />} />
+              <Route path="notifications" element={<NotificationsModule />} />
+              <Route path="chat" element={<Chat />} />
+            </Route>
 
-            {/* Admin Views */}
-            <Route path="admin" element={<AdminDashboard />} />
-            <Route path="employees" element={<Employees />} />
-            <Route path="projects" element={<Projects />} />
-            <Route path="assign-tasks" element={<AssignTasks />} />
-            <Route path="messages" element={<Messages />} />
-            
-            {/* Shared Views */}
-            <Route path="announcements" element={<Announcements />} />
-            <Route path="leaves" element={<Leaves />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="notifications" element={<NotificationsModule />} />
-          </Route>
-
-          {/* Fallback Catch */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+            {/* Fallback Catch */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </Provider>
   );
 }
 

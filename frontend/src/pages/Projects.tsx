@@ -20,6 +20,9 @@ export const Projects: React.FC = () => {
   const [editAllocatedUserIds, setEditAllocatedUserIds] = useState<number[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
 
+  // Delete Confirmation State
+  const [projectToDeleteId, setProjectToDeleteId] = useState<number | null>(null);
+
   const fetchProjects = async () => {
     try {
       setLoading(true);
@@ -90,9 +93,14 @@ export const Projects: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this project?')) return;
+    setProjectToDeleteId(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!projectToDeleteId) return;
     try {
-      await projectsApi.delete(id);
+      await projectsApi.delete(projectToDeleteId);
+      setProjectToDeleteId(null);
       await fetchProjects();
     } catch (err) {
       console.error(err);
@@ -349,6 +357,41 @@ export const Projects: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* DELETE CONFIRMATION MODAL */}
+      {projectToDeleteId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
+                <Trash size={24} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-800 font-heading">Delete Project</h3>
+                <p className="text-xs text-slate-500 mt-0.5 font-semibold">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-650 leading-relaxed font-semibold">
+              Are you sure you want to delete this project? All associated tasks and assignments might be affected.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setProjectToDeleteId(null)}
+                className="px-4 py-2.5 rounded-2xl text-slate-500 hover:bg-slate-105 transition-colors cursor-pointer text-xs font-bold border border-slate-200/60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl transition-all shadow-lg shadow-rose-600/15 cursor-pointer text-xs font-bold"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
