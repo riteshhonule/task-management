@@ -68,6 +68,7 @@ export const Layout: React.FC = () => {
   const [carryForwardReason, setCarryForwardReason] = useState('');
   const [carryForwardError, setCarryForwardError] = useState('');
   const [submittingCarryForward, setSubmittingCarryForward] = useState(false);
+  const [dismissedTaskIds, setDismissedTaskIds] = useState<number[]>([]);
   const location = useLocation();
 
   const checkCarryForwardTasks = async () => {
@@ -97,7 +98,8 @@ export const Layout: React.FC = () => {
     }
   };
 
-  const currentCarryForwardTask = carryForwardTasks[0] || null;
+  const currentCarryForwardTask = carryForwardTasks.find(t => !dismissedTaskIds.includes(t.id)) || null;
+  const scenario = getScenario(currentCarryForwardTask);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -118,11 +120,17 @@ export const Layout: React.FC = () => {
     }
   }, [token, user, location.pathname]);
 
+  const handleClosePopup = () => {
+    if (currentCarryForwardTask) {
+      setDismissedTaskIds(prev => [...prev, currentCarryForwardTask.id]);
+    }
+  };
+
   const handleCarryForwardSubmit = async () => {
     if (!currentCarryForwardTask) return;
 
     const scenario = getScenario(currentCarryForwardTask);
-    const reasonRequired = scenario !== 'FUTURE';
+    const reasonRequired = scenario === 'PAST';
 
     if (reasonRequired && carryForwardReason.trim().length < 20) {
       setCarryForwardError('Delay reason is required and must be at least 20 characters.');
@@ -135,7 +143,7 @@ export const Layout: React.FC = () => {
       await tasksApi.handleCarryForward({
         taskId: currentCarryForwardTask.id,
         carryForward: true,
-        reason: reasonRequired ? carryForwardReason.trim() : undefined,
+        reason: carryForwardReason.trim() ? carryForwardReason.trim() : undefined,
       });
 
       setCarryForwardReason('');
@@ -457,7 +465,7 @@ export const Layout: React.FC = () => {
       {currentCarryForwardTask && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 backdrop-blur-md p-4">
           <div className="w-full max-w-xl rounded-2xl border bg-white p-8 shadow-2xl animate-in zoom-in-95 duration-200 border-slate-200">
-            {getScenario(currentCarryForwardTask) === 'FUTURE' ? (
+            {scenario === 'FUTURE' ? (
               <div className="space-y-6">
                 <div className="flex items-center gap-3.5 text-indigo-600">
                   <div className="rounded-xl bg-indigo-50 p-2.5 border border-indigo-100 shadow-sm">
@@ -501,6 +509,72 @@ export const Layout: React.FC = () => {
                   </button>
                 </div>
               </div>
+            ) : scenario === 'TODAY' ? (
+              <div className="space-y-6">
+                <div className="flex items-center gap-3.5 text-amber-500">
+                  <div className="rounded-xl bg-amber-50 p-2.5 border border-amber-100 shadow-sm">
+                    <AlertCircle size={24} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading text-lg font-bold text-slate-800">
+                      Last Day for Task Completion
+                    </h3>
+                    <p className="text-xs text-amber-600 font-semibold">
+                      Today is the last date for task completion.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-xl bg-slate-50 border border-slate-100 text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">
+                  <span className="font-bold text-slate-800 block mb-2 text-xs uppercase tracking-wider text-slate-500">Unfinished Projects:</span>
+                  <ul className="list-disc pl-5 space-y-1.5 font-medium text-slate-600">
+                    {currentCarryForwardTask.projects?.map((p: any) => (
+                      <li key={p.id}>
+                        <strong className="text-indigo-600">{p.project?.name}:</strong> {p.taskDescription}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
+                    Delay Reason <span className="text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <textarea
+                    value={carryForwardReason}
+                    onChange={(e) => setCarryForwardReason(e.target.value)}
+                    placeholder="Optionally provide a reason for carrying forward this task..."
+                    className="w-full rounded-xl bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 px-4 py-3 text-sm text-slate-800 placeholder-slate-400 focus:outline-none min-h-24 resize-none transition-colors"
+                  />
+                  {carryForwardError && (
+                    <p className="text-xs text-rose-500 font-semibold">{carryForwardError}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleClosePopup}
+                    className="rounded-xl px-5 py-3.5 text-sm font-semibold text-slate-650 hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    Close
+                  </button>
+                  <button
+                    disabled={submittingCarryForward}
+                    onClick={handleCarryForwardSubmit}
+                    className="flex-grow rounded-xl bg-indigo-600 py-3.5 text-sm font-bold text-white hover:bg-indigo-500 active:bg-indigo-700 transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20"
+                  >
+                    {submittingCarryForward ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        Carrying forward...
+                      </>
+                    ) : (
+                      'Carry Forward Task'
+                    )}
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="space-y-6">
                 <div className="flex items-center gap-3.5 text-rose-650">
@@ -509,12 +583,10 @@ export const Layout: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="font-heading text-lg font-bold text-slate-800">
-                      {getScenario(currentCarryForwardTask) === 'TODAY' ? '⚠ Danger Zone' : '⚠ Overdue Task'}
+                      ⚠ Overdue Task
                     </h3>
                     <p className="text-xs text-rose-600 font-semibold">
-                      {getScenario(currentCarryForwardTask) === 'TODAY' 
-                        ? 'Task expected deadline is today!' 
-                        : 'Task expected deadline has already passed!'}
+                      Task expected deadline has already passed!
                     </p>
                   </div>
                 </div>

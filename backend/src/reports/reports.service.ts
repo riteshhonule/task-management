@@ -106,8 +106,11 @@ export class ReportsService {
         for (const p of t.projects) {
           let overdueDays = 0;
           const expectedEndDate = new Date(t.expectedEndDate);
-          if (p.status !== 'COMPLETED' && today.getTime() > expectedEndDate.getTime()) {
-            overdueDays = Math.ceil((today.getTime() - expectedEndDate.getTime()) / (1000 * 60 * 60 * 24));
+          const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          const expectedEndDateMidnight = new Date(expectedEndDate.getFullYear(), expectedEndDate.getMonth(), expectedEndDate.getDate());
+          
+          if (p.status !== 'COMPLETED' && todayMidnight.getTime() > expectedEndDateMidnight.getTime()) {
+            overdueDays = Math.round((todayMidnight.getTime() - expectedEndDateMidnight.getTime()) / (1000 * 60 * 60 * 24));
           }
 
           const latestSubmission = p.submissions && p.submissions.length > 0 ? p.submissions[0] : null;

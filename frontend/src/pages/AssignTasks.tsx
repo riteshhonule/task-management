@@ -132,7 +132,7 @@ export const AssignTasks: React.FC = () => {
             changesSummary: '',
             priority: 'MEDIUM',
             adminComment: '',
-            startTime: '09:00',
+            startTime: '10:00',
             endTime: '18:00',
             jobRoleType: 'Frontend',
             customJobRole: '',
@@ -261,7 +261,7 @@ export const AssignTasks: React.FC = () => {
           completedWorkDescription: p.completedWorkDescription || '',
           completionPercentage: p.completionPercentage || 0,
           adminComment: p.adminComment || '',
-          startTime: p.startTime || '09:00',
+          startTime: p.startTime || '10:00',
           endTime: p.endTime || '18:00',
           jobRoleType: p.jobRoleType || 'Frontend',
           customJobRole: p.customJobRole || '',
@@ -721,7 +721,7 @@ export const AssignTasks: React.FC = () => {
                             <div>
                               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time *</label>
                             <TimePicker 
-                              value={projectDetails[pid]?.startTime || '09:00 AM'}
+                              value={projectDetails[pid]?.startTime || '10:00 AM'}
                               onChange={(val) => handleProjectDetailChange(pid, 'startTime', val)}
                             />
                           </div>
@@ -938,7 +938,7 @@ export const AssignTasks: React.FC = () => {
                           <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time *</label>
                             <TimePicker 
-                              value={rev.startTime || '09:00 AM'}
+                              value={rev.startTime || '10:00 AM'}
                               onChange={(val) => handleEditReviewChange(p.id, 'startTime', val)}
                             />
                           </div>

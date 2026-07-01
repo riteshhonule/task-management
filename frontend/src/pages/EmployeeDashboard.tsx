@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { EditTaskModal } from '../components/EditTaskModal';
 import { TimePicker } from '../components/TimePicker';
 import { parseTimeToMinutes } from '../components/EditTaskModal';
+import { ExpandableText } from '../components/ExpandableText';
 
 type TabType = 'TODAY' | 'YESTERDAY' | 'ALL' | 'COMPLETED' | 'IN_PROGRESS' | 'DELAYED' | 'PENDING';
 
@@ -281,7 +282,7 @@ export const EmployeeDashboard: React.FC = () => {
           priority: 'MEDIUM',
           jobRoleType: 'Frontend',
           customJobRole: '',
-          startTime: '09:00',
+          startTime: '10:00',
           endTime: '18:00',
           proofRequired: false,
           expectedEndDate: startDate || getLocalYYYYMMDD(),
@@ -381,7 +382,7 @@ export const EmployeeDashboard: React.FC = () => {
         priority: projectDetails[pid].priority || 'MEDIUM',
         jobRoleType: projectDetails[pid].jobRoleType || 'Frontend',
         customJobRole: projectDetails[pid].jobRoleType === 'Other' ? projectDetails[pid].customJobRole : undefined,
-        startTime: projectDetails[pid].startTime || '09:00 AM',
+        startTime: projectDetails[pid].startTime || '10:00 AM',
         endTime: projectDetails[pid].endTime || '06:00 PM',
         proofRequired: projectDetails[pid].proofRequired || false,
         expectedEndDate: projectDetails[pid].expectedEndDate ? new Date(projectDetails[pid].expectedEndDate).toISOString() : undefined,
@@ -396,7 +397,7 @@ export const EmployeeDashboard: React.FC = () => {
 
       await tasksApi.create({
         startDate: new Date(startDate).toISOString(),
-        startTime: projectsPayload[0]?.startTime || '09:00 AM',
+        startTime: projectsPayload[0]?.startTime || '10:00 AM',
         expectedEndDate: maxExpectedDate.toISOString(),
         projects: projectsPayload,
       });
@@ -429,7 +430,7 @@ export const EmployeeDashboard: React.FC = () => {
           priority: p.priority || 'MEDIUM',
           jobRoleType: p.jobRoleType || 'Frontend',
           customJobRole: p.customJobRole || '',
-          startTime: p.startTime || '09:00',
+          startTime: p.startTime || '10:00',
           endTime: p.endTime || '18:00',
           proofRequired: p.proofRequired || false,
           expectedEndDate: p.expectedEndDate ? getLocalYYYYMMDD(p.expectedEndDate) : (task.expectedEndDate ? getLocalYYYYMMDD(task.expectedEndDate) : getLocalYYYYMMDD()),
@@ -1106,7 +1107,7 @@ export const EmployeeDashboard: React.FC = () => {
                                 </td>
                                 {/* 5. Task */}
                                 <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-normal leading-relaxed min-w-[200px]">
-                                  {t.taskDescription}
+                                  <ExpandableText text={t.taskDescription} />
                                   {t.changesSummary && <span className="text-indigo-600 font-bold ml-1.5 block mt-1">{t.changesSummary}</span>}
                                 </td>
                                 {/* 6. Start Time */}
@@ -1155,7 +1156,11 @@ export const EmployeeDashboard: React.FC = () => {
                                 </td>
                                 {/* 20. Today's Work Summary */}
                                 <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
-                                  {t.completedWorkDescription || <span className="text-slate-300">-</span>}
+                                  {t.completedWorkDescription ? (
+                                    <ExpandableText text={t.completedWorkDescription} />
+                                  ) : (
+                                    <span className="text-slate-300">-</span>
+                                  )}
                                 </td>
                                 {/* 21. Time Spent */}
                                 <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
@@ -1416,7 +1421,7 @@ export const EmployeeDashboard: React.FC = () => {
                             <div>
                               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time *</label>
                               <TimePicker 
-                                value={projectDetails[pid]?.startTime || '09:00 AM'}
+                                value={projectDetails[pid]?.startTime || '10:00 AM'}
                                 onChange={(val) => handleProjectDetailChange(pid, 'startTime', val)}
                                 className="w-full"
                               />

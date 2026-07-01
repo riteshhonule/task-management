@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { EditTaskModal } from '../components/EditTaskModal';
 import { TimePicker } from '../components/TimePicker';
 import { parseTimeToMinutes } from '../components/EditTaskModal';
+import { ExpandableText } from '../components/ExpandableText';
 
 const JOB_ROLES = ['Frontend', 'Backend', 'Full Stack', 'Testing', 'UI/UX', 'DevOps', 'Other'];
 
@@ -111,7 +112,7 @@ export const EmployeeAssignTask: React.FC = () => {
   const [customJobRole, setCustomJobRole] = useState('');
   const [priority, setPriority] = useState('MEDIUM');
   const [mandatoryProof, setMandatoryProof] = useState(false);
-  const [startTime, setStartTime] = useState('09:00 AM');
+  const [startTime, setStartTime] = useState('10:00 AM');
   const [endTime, setEndTime] = useState('06:00 PM');
   const [startDate, setStartDate] = useState(() => getLocalYYYYMMDD());
   const [expectedDate, setExpectedDate] = useState(() => getLocalYYYYMMDD());
@@ -141,7 +142,7 @@ export const EmployeeAssignTask: React.FC = () => {
     setAssignToId(''); setSelectedProjectId('');
     setTaskDescription(''); setJobRole('Frontend'); setCustomJobRole('');
     setPriority('MEDIUM'); setMandatoryProof(false);
-    setStartTime('09:00 AM'); setEndTime('06:00 PM');
+    setStartTime('10:00 AM'); setEndTime('06:00 PM');
     setStartDate(getLocalYYYYMMDD());
     setExpectedDate(getLocalYYYYMMDD()); setErrors({});
   };
@@ -374,7 +375,7 @@ export const EmployeeAssignTask: React.FC = () => {
                         </td>
                         {/* 5. Task */}
                         <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-normal leading-relaxed min-w-[200px]">
-                          {row.taskDescription}
+                          <ExpandableText text={row.taskDescription} />
                           {row.changesSummary && <span className="text-indigo-600 font-bold ml-1.5 block mt-1">{row.changesSummary}</span>}
                         </td>
                         {/* 6. Start Time */}
@@ -423,7 +424,11 @@ export const EmployeeAssignTask: React.FC = () => {
                         </td>
                         {/* 20. Today's Work Summary */}
                         <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
-                          {row.completedWorkDescription || <span className="text-slate-300">-</span>}
+                          {row.completedWorkDescription ? (
+                            <ExpandableText text={row.completedWorkDescription} />
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
                         </td>
                         {/* 21. Time Spent */}
                         <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">

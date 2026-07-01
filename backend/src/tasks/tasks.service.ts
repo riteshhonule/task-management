@@ -850,7 +850,7 @@ export class TasksService {
         employeeId: userId,
         deletedAt: null,
         startDate: { lt: startOfToday },
-        projects: { some: { status: { in: [TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED] } } },
+        projects: { some: { status: { in: [TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED, TaskStatus.PENDING_REVIEW, TaskStatus.REVIEW_PENDING, TaskStatus.REVISION_REQUIRED] } } },
         carryForwardedTo: null,
       },
       include: { projects: { include: { project: true } } },
@@ -889,8 +889,11 @@ export class TasksService {
     const formattedProjects = task.projects.map((tp: any) => {
       let overdueDays = 0;
       const expectedEndDate = new Date(task.expectedEndDate);
-      if (tp.status !== TaskStatus.COMPLETED && today.getTime() > expectedEndDate.getTime()) {
-        overdueDays = Math.ceil((today.getTime() - expectedEndDate.getTime()) / (1000 * 60 * 60 * 24));
+      const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const expectedEndDateMidnight = new Date(expectedEndDate.getFullYear(), expectedEndDate.getMonth(), expectedEndDate.getDate());
+
+      if (tp.status !== TaskStatus.COMPLETED && todayMidnight.getTime() > expectedEndDateMidnight.getTime()) {
+        overdueDays = Math.round((todayMidnight.getTime() - expectedEndDateMidnight.getTime()) / (1000 * 60 * 60 * 24));
       }
 
       return {
@@ -946,16 +949,16 @@ export class TasksService {
       const expectedEndDate = new Date(task.expectedEndDate);
       const expectedDateOnly = new Date(expectedEndDate.getFullYear(), expectedEndDate.getMonth(), expectedEndDate.getDate());
 
-      const isDeadlineReachedOrOverdue = expectedDateOnly.getTime() <= todayDate.getTime();
+      const isOverdue = expectedDateOnly.getTime() < todayDate.getTime();
 
-      if (isDeadlineReachedOrOverdue) {
+      if (isOverdue) {
         if (!reason || reason.trim().length < 20) {
           throw new BadRequestException('Delay reason is required and must be at least 20 characters.');
         }
       }
 
       const incompleteProjects = task.projects.filter(p => 
-        ([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED] as TaskStatus[]).includes(p.status)
+        ([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED, TaskStatus.PENDING_REVIEW, TaskStatus.REVIEW_PENDING, TaskStatus.REVISION_REQUIRED] as TaskStatus[]).includes(p.status)
       );
 
       let newExpectedEndDate = new Date(task.expectedEndDate);
@@ -989,13 +992,13 @@ export class TasksService {
 
       for (const p of incompleteProjects) {
         const oldStatus = p.status;
-        const newStatus = isDeadlineReachedOrOverdue ? TaskStatus.DELAYED : TaskStatus.ON_HOLD;
+        const newStatus = isOverdue ? TaskStatus.DELAYED : TaskStatus.ON_HOLD;
 
         await this.prisma.taskProject.update({
           where: { id: p.id },
           data: {
             status: newStatus,
-            delayReason: isDeadlineReachedOrOverdue ? reason : null,
+            delayReason: reason || null,
             notes: `${p.notes || ''} [Carried forward to today]`.trim(),
           },
         });
@@ -1005,9 +1008,9 @@ export class TasksService {
             taskProjectId: p.id,
             statusBefore: oldStatus,
             statusAfter: newStatus,
-            remarks: isDeadlineReachedOrOverdue 
+            remarks: isOverdue 
               ? `Carried forward (Deadline Reached/Overdue). Reason: ${reason}`
-              : 'Carried forward (Future Deadline)',
+              : (reason ? `Carried forward. Reason: ${reason}` : 'Carried forward'),
           }
         });
       }
@@ -1019,8 +1022,8 @@ export class TasksService {
           employeeId: userId,
           fromDate: task.startDate,
           toDate: todayDate,
-          reason: isDeadlineReachedOrOverdue ? reason : null,
-          isDeadlineCarryForward: isDeadlineReachedOrOverdue,
+          reason: reason || null,
+          isDeadlineCarryForward: isOverdue,
         }
       });
 
@@ -1034,14 +1037,14 @@ export class TasksService {
         select: { id: true },
       });
 
-      const adminMessage = `Employee "${employeeName}" carried forward task from ${formattedFromDate} to ${formattedToDate}.${isDeadlineReachedOrOverdue ? ` Reason: ${reason}` : ''}`;
+      const adminMessage = `Employee "${employeeName}" carried forward task from ${formattedFromDate} to ${formattedToDate}.${reason ? ` Reason: ${reason}` : ''}`;
       for (const admin of admins) {
         await this.notificationsService.createNotification(
           admin.id,
           'TASK_UPDATED',
           'Task Carried Forward',
           adminMessage,
-          { taskId: newTask.id, oldTaskId: task.id, isOverdue: isDeadlineReachedOrOverdue },
+          { taskId: newTask.id, oldTaskId: task.id, isOverdue },
           userId,
           newTask.id
         );
@@ -1072,7 +1075,7 @@ export class TasksService {
     } else {
       // Just mark notes for incomplete ones
       const incompleteProjects = task.projects.filter(p => 
-        ([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED] as TaskStatus[]).includes(p.status)
+        ([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.DELAYED, TaskStatus.PENDING_REVIEW, TaskStatus.REVIEW_PENDING, TaskStatus.REVISION_REQUIRED] as TaskStatus[]).includes(p.status)
       );
       for (const p of incompleteProjects) {
         await this.prisma.taskProject.update({

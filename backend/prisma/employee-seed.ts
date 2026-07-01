@@ -71,6 +71,14 @@ async function main() {
       role: Role.EMPLOYEE,
       jobRole: 'Frontend Developer',
     },
+    {
+      name: 'Sahil Shipurkar',
+      mobileNumber: '9356702363',
+      email: 'sahilshipurkar88@gmail.com',
+      password: 'Sahil@12345',
+      role: Role.EMPLOYEE,
+      jobRole: 'Full Stack Developer',
+    },
   ];
 
   let addedCount = 0;

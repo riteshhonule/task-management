@@ -5,6 +5,7 @@ import { FileSpreadsheet, Search, Loader2, Calendar, Plus, X, CheckSquare } from
 import { EditTaskModal } from '../components/EditTaskModal';
 import { TimePicker } from '../components/TimePicker';
 import { parseTimeToMinutes } from '../components/EditTaskModal';
+import { ExpandableText } from '../components/ExpandableText';
 
 type TabType = 'TODAY' | 'YESTERDAY' | 'ALL' | 'COMPLETED' | 'IN_PROGRESS' | 'DELAYED' | 'PENDING';
 
@@ -105,7 +106,7 @@ export const Reports: React.FC = () => {
             changesGivenBy: '',
             changesSummary: '',
             priority: 'MEDIUM',
-            startTime: '09:00',
+            startTime: '10:00',
             endTime: '18:00',
             jobRoleType: 'Frontend',
             customJobRole: '',
@@ -162,7 +163,7 @@ export const Reports: React.FC = () => {
         changesSummary: projectDetails[pid].changesSummary || undefined,
         priority: projectDetails[pid].priority || 'MEDIUM',
         status: projectDetails[pid]?.id ? undefined : 'PENDING',
-        startTime: projectDetails[pid].startTime || '09:00 AM',
+        startTime: projectDetails[pid].startTime || '10:00 AM',
         endTime: projectDetails[pid].endTime || '06:00 PM',
         jobRoleType: projectDetails[pid].jobRoleType || 'Frontend',
         customJobRole: projectDetails[pid].jobRoleType === 'Other' ? projectDetails[pid].customJobRole : undefined,
@@ -184,7 +185,7 @@ export const Reports: React.FC = () => {
         await tasksApi.update(editTask.id, {
           employeeId: parseInt(employeeId),
           startDate: new Date(startDate).toISOString(),
-          startTime: projectsPayload[0]?.startTime || '09:00 AM',
+          startTime: projectsPayload[0]?.startTime || '10:00 AM',
           expectedEndDate: maxExpectedDate.toISOString(),
           projects: projectsPayload,
         });
@@ -193,7 +194,7 @@ export const Reports: React.FC = () => {
         await tasksApi.create({
           employeeId: parseInt(employeeId),
           startDate: new Date(startDate).toISOString(),
-          startTime: projectsPayload[0]?.startTime || '09:00 AM',
+          startTime: projectsPayload[0]?.startTime || '10:00 AM',
           expectedEndDate: maxExpectedDate.toISOString(),
           projects: projectsPayload,
         });
@@ -400,7 +401,7 @@ export const Reports: React.FC = () => {
             changesGivenBy: p.changesGivenBy || '',
             changesSummary: p.changesSummary || '',
             priority: p.priority || 'MEDIUM',
-            startTime: p.startTime || '09:00',
+            startTime: p.startTime || '10:00',
             endTime: p.endTime || '18:00',
             jobRoleType: p.jobRoleType || 'Frontend',
             customJobRole: p.customJobRole || '',
@@ -441,7 +442,7 @@ export const Reports: React.FC = () => {
           changesGivenBy: p.changesGivenBy || '',
           changesSummary: p.changesSummary || '',
           priority: p.priority || 'MEDIUM',
-          startTime: p.startTime || '09:00',
+          startTime: p.startTime || '10:00',
           endTime: p.endTime || '18:00',
           jobRoleType: p.jobRoleType || 'Frontend',
           customJobRole: p.customJobRole || '',
@@ -800,7 +801,7 @@ export const Reports: React.FC = () => {
                               <td className="px-3 py-2.5 text-xs text-indigo-700 font-bold whitespace-nowrap">{t.project?.name || 'N/A'}</td>
                               {/* 5. Task */}
                               <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-normal leading-relaxed min-w-[200px]">
-                                {t.taskDescription}
+                                <ExpandableText text={t.taskDescription} />
                               </td>
                               {/* 6. Start Time */}
                               <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">{t.startTime || 'N/A'}</td>
@@ -848,7 +849,11 @@ export const Reports: React.FC = () => {
                               </td>
                               {/* 20. Today's Work Summary */}
                               <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-normal leading-relaxed min-w-[150px]">
-                                {t.completedWorkDescription || <span className="text-slate-300">-</span>}
+                                {t.completedWorkDescription ? (
+                                  <ExpandableText text={t.completedWorkDescription} />
+                                ) : (
+                                  <span className="text-slate-300">-</span>
+                                )}
                               </td>
                               {/* 21. Time Spent */}
                               <td className="px-3 py-2.5 text-xs text-slate-700 whitespace-nowrap">
@@ -1094,7 +1099,7 @@ export const Reports: React.FC = () => {
                           <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Start Time *</label>
                             <TimePicker 
-                              value={projectDetails[pid]?.startTime || '09:00 AM'}
+                              value={projectDetails[pid]?.startTime || '10:00 AM'}
                               onChange={(val) => handleProjectDetailChange(pid, 'startTime', val)}
                             />
                           </div>

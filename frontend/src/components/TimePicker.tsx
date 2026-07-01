@@ -8,7 +8,7 @@ interface TimePickerProps {
 
 export const TimePicker: React.FC<TimePickerProps> = ({ value, onChange, className }) => {
   const parseValue = (val: string) => {
-    if (!val) return { hour: '09', minute: '00', ampm: 'AM' };
+    if (!val) return { hour: '10', minute: '00', ampm: 'AM' };
     
     // Check 12-hour format e.g. "09:30 AM" or "9:30 AM"
     const match12 = val.match(/^\s*(\d+):(\d+)\s*(AM|PM)\s*$/i);
@@ -33,7 +33,7 @@ export const TimePicker: React.FC<TimePickerProps> = ({ value, onChange, classNa
       return { hour: h.toString().padStart(2, '0'), minute: m, ampm: ap };
     }
     
-    return { hour: '09', minute: '00', ampm: 'AM' };
+    return { hour: '10', minute: '00', ampm: 'AM' };
   };
 
   const { hour, minute, ampm } = parseValue(value);
