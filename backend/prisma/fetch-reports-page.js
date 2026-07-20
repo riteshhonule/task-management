@@ -1,6 +1,6 @@
 import http from 'http';
 
-http.get('http://localhost:5173/src/pages/Reports.tsx', (res) => {
+http.get('http://localhost:5176/src/pages/Reports.tsx', (res) => {
   let data = '';
   res.on('data', (chunk) => { data += chunk; });
   res.on('end', () => {
